@@ -9,7 +9,11 @@ import swaggerUi from "@fastify/swagger-ui"
 import { config } from "./config.js"
 import { routesSante } from "./routes/sante.js"
 import { routesMoi } from "./routes/v1/moi.js"
+import { routesContrats } from "./routes/v1/contrats.js"
+import { routesEnfants } from "./routes/v1/enfants.js"
 import { routesRepetiteurs } from "./routes/v1/repetiteurs.js"
+import { routesSeances } from "./routes/v1/seances.js"
+import { routesSignalements } from "./routes/v1/signalements.js"
 
 export async function construireServeur() {
   const app = Fastify({
@@ -56,6 +60,10 @@ export async function construireServeur() {
     async (v1) => {
       await v1.register(routesMoi)
       await v1.register(routesRepetiteurs)
+      await v1.register(routesEnfants)
+      await v1.register(routesContrats)
+      await v1.register(routesSeances)
+      await v1.register(routesSignalements)
     },
     { prefix: "/v1" },
   )

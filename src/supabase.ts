@@ -1,6 +1,24 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import WebSocketNode from "ws"
 import type { FastifyReply, FastifyRequest } from "fastify"
 import { config } from "./config.js"
+
+/**
+ * `WebSocket` global, pour les versions de Node qui n'en ont pas.
+ *
+ * `@supabase/supabase-js` charge son module temps réel au démarrage, même
+ * quand on ne s'en sert pas — et ce module exige un `WebSocket` global, que
+ * Node ne fournit qu'à partir de la 22. Sans cette ligne, TOUTES les routes
+ * répondent 500 avec « Node.js detected but native WebSocket », une erreur qui
+ * ne dit rien du vrai problème.
+ *
+ * Ce n'est pas une précaution théorique : le `package.json` déclare
+ * `"node": ">=20"`, et Node 20 est précisément dans ce cas. Le service serait
+ * tombé au premier déploiement, sur chaque appel.
+ */
+if (typeof globalThis.WebSocket === "undefined") {
+  ;(globalThis as { WebSocket?: unknown }).WebSocket = WebSocketNode
+}
 
 /**
  * Un client par requête, et jamais un de plus. Les WeakMap se vident d'elles-
