@@ -1,0 +1,31 @@
+{
+  "name": "tutela-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API du service Tuteurs — plateforme éducative camerounaise",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/serveur.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/serveur.js",
+    "typecheck": "tsc --noEmit",
+    "verifier": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "@fastify/sensible": "^6.0.0",
+    "@fastify/swagger": "^9.4.0",
+    "@fastify/swagger-ui": "^6.1.1",
+    "@supabase/supabase-js": "^2.58.0",
+    "fastify": "^5.2.0",
+    "fastify-plugin": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
