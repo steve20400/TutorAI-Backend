@@ -10,6 +10,7 @@ import { config } from "./config.js"
 import { routesSante } from "./routes/sante.js"
 import { routesMoi } from "./routes/v1/moi.js"
 import { routesAdmin } from "./routes/v1/admin.js"
+import { routesCompte } from "./routes/v1/compte.js"
 import { routesContrats } from "./routes/v1/contrats.js"
 import { routesEnfants } from "./routes/v1/enfants.js"
 import { routesRepetiteur } from "./routes/v1/repetiteur.js"
@@ -74,6 +75,7 @@ export async function construireServeur() {
       await v1.register(routesVilles)
       await v1.register(routesParametres)
       await v1.register(routesContact)
+      await v1.register(routesCompte, { prefix: "/compte" })
       await v1.register(routesRepetiteur, { prefix: "/repetiteur" })
       await v1.register(routesAdmin, { prefix: "/admin" })
     },
