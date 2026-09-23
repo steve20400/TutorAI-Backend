@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/serveur.js",
     "typecheck": "tsc --noEmit",
-    "verifier": "npm run typecheck && npm run build"
+    "verifier": "npm run typecheck && npm run test:ia && npm run build",
+    "test:ia": "tsx tests/ia.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",
