@@ -105,3 +105,38 @@ export async function routesContact(app: FastifyInstance): Promise<void> {
     },
   )
 }
+
+/**
+ * Les avatars proposés aux élèves.
+ *
+ * Lisibles sans session : un enfant choisit le sien pendant son inscription,
+ * avant d'avoir un compte. Ce sont des dessins, pas des données.
+ */
+export async function routesAvatars(app: FastifyInstance): Promise<void> {
+  app.get(
+    "/avatars",
+    {
+      schema: {
+        tags: ["référentiel"],
+        summary: "Avatars au choix",
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete)
+        .from("avatars")
+        .select("cle, motif, fond, trait, forme")
+        .eq("visible", true)
+        .order("ordre")
+
+      if (error) {
+        requete.log.error({ error }, "lecture des avatars impossible")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Impossible de lire les avatars pour le moment.",
+        })
+      }
+
+      return { donnees: data ?? [] }
+    },
+  )
+}
