@@ -43,6 +43,97 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /**
+   * Créer un ou plusieurs tuteurs, un par matière choisie.
+   *
+   * Les programmes sont RELUS ici : le client envoie des identifiants, et
+   * seuls ceux qui existent et sont publiés sont retenus. Sans cette relecture,
+   * un identifiant fabriqué créerait un tuteur sur une matière que la
+   * plateforme ne couvre pas — et le modèle recevrait un programme vide.
+   *
+   * La mémoire naît avec le tuteur, vide. La créer plus tard, au premier
+   * message, ferait dépendre l'existence d'une ligne d'un échange qui peut
+   * échouer.
+   */
+  app.post(
+    "/",
+    {
+      schema: {
+        tags: ["tuteur"],
+        summary: "Créer ses tuteurs",
+        security: securite,
+        body: {
+          type: "object",
+          required: ["programmeIds"],
+          properties: {
+            programmeIds: {
+              type: "array",
+              items: { type: "string", format: "uuid" },
+              minItems: 1,
+              maxItems: 12,
+            },
+            manuels: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { titre: { type: "string", maxLength: 200 } },
+              },
+              maxItems: 20,
+            },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { programmeIds, manuels = [] } = requete.body as {
+        programmeIds: string[]
+        manuels?: { titre: string }[]
+      }
+      const moi = utilisateurDe(requete)
+      const supabase = supabasePour(requete)
+
+      const { data: programmes } = await supabase
+        .from("programmes")
+        .select("id, niveau, matiere")
+        .in("id", programmeIds)
+        .eq("publie", true)
+
+      if (!programmes?.length) {
+        return reponse.code(400).send({
+          erreur: "programme_introuvable",
+          message: "Aucun de ces programmes n'existe.",
+        })
+      }
+
+      const { data: crees, error } = await supabase
+        .from("tuteurs_ia")
+        .insert(
+          programmes.map((p) => ({
+            eleve_id: moi,
+            programme_id: p.id,
+            matiere: p.matiere,
+            niveau: p.niveau,
+            manuels,
+          })),
+        )
+        .select("id, matiere, niveau")
+
+      if (error || !crees) {
+        requete.log.warn({ error }, "creation de tuteur refusee")
+        return reponse.code(403).send({
+          erreur: "creation_refusee",
+          message: error?.message ?? "La création a échoué.",
+        })
+      }
+
+      await supabase
+        .from("memoire_eleve")
+        .insert(crees.map((t) => ({ tuteur_id: t.id })))
+
+      return reponse.code(201).send({ donnees: crees })
+    },
+  )
+
   app.get(
     "/:id",
     {
