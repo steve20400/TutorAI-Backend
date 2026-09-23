@@ -445,7 +445,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const { data: parent } = await supabase
         .from("profils")
         .select(
-          "id, prenom, nom, identifiant, telephone, pays, cree_le, desactive_le, motif_desactivation",
+          "id, prenom, nom, identifiant, telephone, pays, photo_url, cree_le, desactive_le, motif_desactivation",
         )
         .eq("id", id)
         .eq("role", "parent")
@@ -469,7 +469,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         idsEnfants.length
           ? supabase
               .from("profils")
-              .select("id, prenom, nom, identifiant, cree_le, desactive_le")
+              .select("id, prenom, nom, identifiant, photo_url, cree_le, desactive_le")
               .in("id", idsEnfants)
           : Promise.resolve({ data: [] as Record<string, unknown>[] }),
         supabase
@@ -506,8 +506,17 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
             .in("contrat_id", idsContrats)
         : { data: [] as Record<string, unknown>[] }
 
+      // L'adresse vient d'`auth.users`, que PostgREST n'expose pas : seule une
+      // fonction `security definer` peut la lire, et elle vérifie elle-même
+      // que l'appelant est bien de l'administration. Contacter un parent par
+      // écrit est souvent le seul moyen de régler quelque chose — et c'est
+      // par écrit qu'on garde une trace.
+      const { data: courriel } = await supabase.rpc("courriel_du_compte", {
+        cible: id,
+      })
+
       return {
-        parent,
+        parent: { ...parent, courriel: courriel ?? null },
         enfants: enfants.data ?? [],
         contrats: (contrats.data ?? []).map((c) => ({
           ...c,
