@@ -285,7 +285,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         supabase
           .from("repetiteurs")
           .select(
-            "id, ville, bio, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, statut, verifie_le, motif_refus",
+            "id, ville, bio, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, statut, verifie_le, motif_refus, photo_url",
           )
           .eq("id", id)
           .maybeSingle(),
