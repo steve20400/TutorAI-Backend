@@ -24,7 +24,7 @@ export async function routesMoi(app: FastifyInstance): Promise<void> {
       // en plus donnerait l'illusion que c'est le code qui protège.
       const { data, error } = await supabasePour(requete)
         .from("profils")
-        .select("id, prenom, nom, role, pays, identifiant")
+        .select("id, prenom, nom, role, pays, identifiant, photo_url")
         .eq("id", utilisateurDe(requete))
         .maybeSingle()
 
