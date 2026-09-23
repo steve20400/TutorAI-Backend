@@ -27,7 +27,7 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const { data, error } = await supabasePour(requete)
         .from("tuteurs_ia")
-        .select("id, matiere, niveau, cree_le")
+        .select("id, matiere, niveau, manuels, cree_le")
         .eq("eleve_id", utilisateurDe(requete))
         .order("cree_le", { ascending: true })
 
@@ -79,7 +79,7 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
 
       const { data: seances } = await supabase
         .from("seances")
-        .select("id, statut, demarree_le, terminee_le")
+        .select("id, statut, lecon_titre, demarree_le, terminee_le")
         .eq("tuteur_id", id)
         .order("demarree_le", { ascending: false })
         .limit(30)
@@ -114,9 +114,13 @@ export async function routesProgrammes(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const { niveau } = requete.query as { niveau?: string }
 
+      // `publie` est déjà imposé par la politique de lecture. Le répéter ici
+      // ne protégerait rien de plus, mais rend la requête lisible : on voit ce
+      // qu'elle renvoie sans aller lire les politiques.
       let q = supabasePour(requete)
         .from("programmes")
-        .select("id, matiere, niveau, pays")
+        .select("id, matiere, niveau, pays, sous_systeme")
+        .order("niveau")
         .order("matiere")
 
       if (niveau) q = q.eq("niveau", niveau)
