@@ -44,16 +44,36 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const { statut = "en_attente" } = requete.query as { statut?: string }
 
-      const { data, error } = await supabasePour(requete)
+      const supabase = supabasePour(requete)
+      const { data, error } = await supabase
         .from("repetiteurs")
         .select(
-          "id, ville, bio, matieres, niveaux, tarif_mensuel, annees_experience, statut, verifie_le, motif_refus, cree_le",
+          "id, ville, bio, matieres, niveaux, tarif_mensuel, annees_experience, statut, verifie_le, motif_refus, cree_le, maj_le",
         )
         .eq("statut", statut)
-        .order("cree_le", { ascending: true })
+        .order("maj_le", { ascending: true })
 
       if (error) return echec(requete, reponse, error, "dossiers")
-      return { donnees: data ?? [] }
+
+      const ids = (data ?? []).map((d) => d.id as string)
+      if (ids.length === 0) return { donnees: [] }
+
+      // L'identité vient avec, plutôt qu'en second appel : deux allers-retours
+      // vers un service qui peut dormir cinquante secondes pour afficher un
+      // seul écran, c'est une pile de dossiers qu'on n'ouvre plus.
+      const { data: profils } = await supabase
+        .from("profils")
+        .select("id, prenom, nom, identifiant, desactive_le")
+        .in("id", ids)
+
+      const parId = new Map((profils ?? []).map((p) => [p.id as string, p]))
+
+      return {
+        donnees: (data ?? []).map((d) => ({
+          ...d,
+          profil: parId.get(d.id as string) ?? null,
+        })),
+      }
     },
   )
 
