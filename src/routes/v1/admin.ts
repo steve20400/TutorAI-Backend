@@ -23,6 +23,18 @@ import {
  * elles-mêmes : seules elles connaissent le moment exact de la bascule, et un
  * registre écrit après coup peut manquer ce qui vient d'échouer.
  */
+/**
+ * Modules qui exigent une clé enregistrée pour pouvoir s'allumer, et le nom de
+ * la clé dont chacun dépend.
+ *
+ * Une Map plutôt qu'un Set : savoir QUELLE clé manque permet de le dire, et de
+ * vérifier qu'elle est réellement posée plutôt que de refuser en bloc.
+ */
+const CLES_REQUISES = new Map([
+  ["ia_active", "anthropic"],
+  ["paiement_actif", "mtn"],
+])
+
 export async function routesAdmin(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", exigerSession)
   app.addHook("preHandler", exigerAdmin)
@@ -502,18 +514,61 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const { cle } = requete.params as { cle: string }
       const { valeur } = requete.body as { valeur: unknown }
+      const supabase = supabasePour(requete)
 
-      const { error } = await supabasePour(requete)
+      // Un module qui exige une clé ne s'allume pas sans elle.
+      //
+      // L'interrupteur est grisé dans l'interface, mais un bouton désactivé ne
+      // protège que l'interface. Allumer le tuteur IA sans clé Anthropic
+      // afficherait aux élèves un écran de création qui échouerait à la
+      // première question — et le refus serait attribué au produit, pas au
+      // réglage manquant.
+      if (valeur === true && CLES_REQUISES.has(cle)) {
+        const { data: posee } = await supabase
+          .from("cles_api")
+          .select("nom, apercu")
+          .eq("nom", CLES_REQUISES.get(cle)!)
+          .maybeSingle()
+
+        if (!posee?.apercu) {
+          await journaliser(
+            supabase,
+            utilisateurDe(requete),
+            "activation_refusee_cle_manquante",
+            "parametre",
+            cle,
+          )
+          return reponse.code(409).send({
+            erreur: "cle_manquante",
+            message:
+              "Ce module a besoin d'une clé d'accès enregistrée avant de " +
+              "pouvoir être allumé.",
+          })
+        }
+      }
+
+      const { error } = await supabase
         .from("parametres")
         .update({ valeur, maj_le: new Date().toISOString() })
         .eq("cle", cle)
 
       if (error) return echec(requete, reponse, error, "parametre")
 
+      // Un module s'allume ou s'éteint ; une résolution vidéo ou un nombre de
+      // participants se règle. Écrire « desactivation » pour un passage en
+      // 720p rendrait le registre trompeur — et un registre qui se trompe est
+      // pire qu'un registre vide, parce qu'on le croit.
+      const action =
+        typeof valeur === "boolean"
+          ? valeur
+            ? "activation"
+            : "desactivation"
+          : "reglage"
+
       await journaliser(
         supabasePour(requete),
         utilisateurDe(requete),
-        valeur === true ? "activation" : "desactivation",
+        action,
         "parametre",
         cle,
       )
@@ -614,11 +669,34 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       },
     },
     async (requete, reponse) => {
-      const corps = requete.body as Record<string, unknown>
+      const corps = { ...(requete.body as Record<string, unknown>) }
+      const supabase = supabasePour(requete)
+
+      // Le pourcentage suppose que l'argent transite par la plateforme. Sans
+      // porte-monnaie, il n'y a aucun gain à observer — et encaisser pour
+      // reverser ferait de TUTELA un émetteur de monnaie électronique au sens
+      // CEMAC, ce qui demande une société et une licence. Le refus est ici, et
+      // pas seulement dans l'interface qui grise le choix.
+      if (corps.mode === "pourcentage_gains") {
+        const { data: portefeuille } = await supabase
+          .from("parametres")
+          .select("valeur")
+          .eq("cle", "portefeuille_actif")
+          .maybeSingle()
+
+        if (portefeuille?.valeur !== true) {
+          return reponse.code(409).send({
+            erreur: "portefeuille_eteint",
+            message:
+              "Le pourcentage des gains exige le porte-monnaie interne, qui " +
+              "est éteint.",
+          })
+        }
+      }
 
       // Seuls les champs présents sont écrits : un PATCH partiel, pour que
       // changer le délai n'efface pas le montant.
-      const { error } = await supabasePour(requete)
+      const { error } = await supabase
         .from("facturation")
         .update(corps)
         .eq("id", 1)
