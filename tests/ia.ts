@@ -44,9 +44,23 @@ const demande = {
   maxJetons: 500,
 }
 
+/** Avec les trois couches, pour eprouver le point de cache. */
+const enTrois = {
+  ...demande,
+  stable: "PROGRAMME OFFICIEL — Terminale C, mathematiques",
+  volatil: "Lecon du jour : les limites. L'eleve confond limite et valeur.",
+}
+
+/** Le corps envoye au fournisseur, relu apres coup. */
+function corpsEnvoye(): Record<string, unknown> {
+  return JSON.parse(String(derniereRequete!.init.body))
+}
+
+let derniereRequete: { url: string; init: RequestInit } | null = null
+
 async function main(): Promise<void> {
   const vraiFetch = globalThis.fetch
-  let derniereRequete: { url: string; init: RequestInit } | null = null
+
 
   const servir = (lignes: string[], statut = 200) => {
     globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -69,6 +83,31 @@ async function main(): Promise<void> {
   verifier("anthropic annonce sa version d'API",
     (derniereRequete!.init.headers as Record<string, string>)["anthropic-version"], "2023-06-01")
 
+  // ── Le point de cache, la ou il decide de la facture ──────────────────────
+  servir([
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":9000}}}',
+    'data: {"type":"content_block_delta","delta":{"text":"."}}',
+    'data: {"type":"message_delta","usage":{"output_tokens":1}}',
+  ])
+  await rassembler(parler(enTrois, { fournisseur: "anthropic", modele: "m", cle: "k" }))
+  {
+    const blocs = corpsEnvoye().system as Array<Record<string, unknown>>
+    verifier("anthropic envoie les trois couches", blocs.length, 3)
+    verifier("le repere de cache est sur le programme, pas sur les regles",
+      blocs.map((b) => Boolean(b.cache_control)), [false, true, false])
+    verifier("et le volatil vient APRES, donc hors cache",
+      String(blocs[2]!.text).startsWith("Lecon du jour"), true)
+  }
+
+  // Sans deuxieme couche, le repere retombe sur la premiere.
+  servir(['data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}'])
+  await rassembler(parler(demande, { fournisseur: "anthropic", modele: "m", cle: "k" }))
+  {
+    const blocs = corpsEnvoye().system as Array<Record<string, unknown>>
+    verifier("sans programme, on cache au moins les regles",
+      Boolean(blocs[0]!.cache_control), true)
+  }
+
   // ── Gemini : la consommation est CUMULATIVE, il ne faut pas l'additionner ──
   servir([
     'data: {"candidates":[{"content":{"parts":[{"text":"Bien"}]}}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":5}}',
@@ -78,6 +117,16 @@ async function main(): Promise<void> {
   verifier("gemini assemble le texte", r.texte, "Biensur.")
   verifier("gemini ne cumule PAS un compte deja cumulatif",
     r.usage, { entree: 100, sortie: 11, approximatif: false })
+
+  // Gemini n'a pas de repere : les trois couches partent dans l'ordre.
+  servir(['data: {"candidates":[{"content":{"parts":[{"text":"."}]}}]}'])
+  await rassembler(parler(enTrois, { fournisseur: "gemini", modele: "m", cle: "k" }))
+  {
+    const parts = (corpsEnvoye().systemInstruction as { parts: Array<{ text: string }> }).parts
+    verifier("gemini garde l'ordre stable puis volatil",
+      parts.map((p) => p.text.slice(0, 9)),
+      ["Tu es un ", "PROGRAMME", "Lecon du "])
+  }
 
   // ── Compatible : avec la consommation ─────────────────────────────────────
   servir([
@@ -102,6 +151,19 @@ async function main(): Promise<void> {
   }))
   verifier("un serveur muet ne fait pas croire a un cout nul", r.usage.sortie > 0, true)
   verifier("et le chiffre est annonce comme approximatif", r.usage.approximatif, true)
+
+  // Le compatible concatene, dans le meme ordre : un cache de prefixe cote
+  // serveur ne mord que si le debut ne bouge pas.
+  servir(['data: {"choices":[{"delta":{"content":"."}}]}', "data: [DONE]"])
+  await rassembler(parler(enTrois, {
+    fournisseur: "compatible", modele: "m", cle: "k", url: "https://api.exemple.test/v1",
+  }))
+  {
+    const messages = corpsEnvoye().messages as Array<{ role: string; content: string }>
+    const systeme = messages[0]!.content
+    verifier("le compatible met le stable avant le volatil",
+      systeme.indexOf("PROGRAMME") < systeme.indexOf("Lecon du jour"), true)
+  }
 
   // ── Les refus ─────────────────────────────────────────────────────────────
   const refuse = async (f: () => Promise<unknown>): Promise<string> => {

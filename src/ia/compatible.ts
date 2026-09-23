@@ -50,7 +50,15 @@ export const compatible: Fournisseur = {
         stream: true,
         stream_options: { include_usage: true },
         messages: [
-          { role: "system", content: demande.systeme },
+          {
+            role: "system",
+            // Le stable avant le volatil : les serveurs qui font du cache de
+            // préfixe — vLLM le fait — ne mordent que si le début est
+            // identique d'une requête à l'autre.
+            content: [demande.systeme, demande.stable, demande.volatil]
+              .filter(Boolean)
+              .join("\n\n"),
+          },
           ...demande.messages.map((m) => ({
             role: m.role === "utilisateur" ? "user" : "assistant",
             content: m.contenu,

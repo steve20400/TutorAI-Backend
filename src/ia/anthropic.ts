@@ -31,7 +31,10 @@ export const anthropic: Fournisseur = {
       body: JSON.stringify({
         model: demande.modele,
         max_tokens: demande.maxJetons,
-        system: demande.systeme,
+        // Le point de cache se pose APRÈS la dernière couche stable : il
+        // couvre tout ce qui le précède. Le mettre avant le programme
+        // reviendrait à ne rien cacher du tout.
+        system: blocsSysteme(demande),
         stream: true,
         messages: demande.messages.map((m) => ({
           role: m.role === "utilisateur" ? "user" : "assistant",
@@ -85,6 +88,34 @@ export const anthropic: Fournisseur = {
       usage: { entree, sortie, approximatif: !sorti },
     }
   },
+}
+
+/**
+ * Les trois couches en blocs, avec le repère de cache au bon endroit.
+ *
+ * `cache_control` se pose sur le DERNIER bloc stable et couvre tout ce qui le
+ * précède. Le volatil vient après, donc hors cache — c'est bien ce qu'on
+ * veut : il change à chaque séance.
+ */
+function blocsSysteme(demande: Demande): Array<Record<string, unknown>> {
+  const blocs: Array<Record<string, unknown>> = [
+    { type: "text", text: demande.systeme },
+  ]
+
+  if (demande.stable) {
+    blocs.push({
+      type: "text",
+      text: demande.stable,
+      cache_control: { type: "ephemeral" },
+    })
+  } else {
+    // Sans deuxième couche, le repère se pose sur la première : mieux vaut
+    // cacher les règles du tuteur que de ne rien cacher.
+    blocs[0]!.cache_control = { type: "ephemeral" }
+  }
+
+  if (demande.volatil) blocs.push({ type: "text", text: demande.volatil })
+  return blocs
 }
 
 /** Le message d'erreur du fournisseur, ou son code si le corps est illisible. */

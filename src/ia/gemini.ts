@@ -36,7 +36,19 @@ export const gemini: Fournisseur = {
       signal: demande.signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: demande.systeme }] },
+        // Gemini n'a pas de repère de cache dans la requête : son cache
+        // explicite passe par une API séparée qui crée un contenu daté, et
+        // son cache implicite se déclenche tout seul sur les longs préfixes
+        // identiques. Les trois couches partent donc dans l'ordre, le stable
+        // avant le volatil, ce qui est la condition pour que l'implicite
+        // morde. On ne promet rien de plus que ça.
+        systemInstruction: {
+          parts: [
+            { text: demande.systeme },
+            ...(demande.stable ? [{ text: demande.stable }] : []),
+            ...(demande.volatil ? [{ text: demande.volatil }] : []),
+          ],
+        },
         contents: demande.messages.map((m) => ({
           role: m.role === "utilisateur" ? "user" : "model",
           parts: [{ text: m.contenu }],

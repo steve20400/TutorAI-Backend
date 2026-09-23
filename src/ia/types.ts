@@ -31,9 +31,25 @@ export type Morceau =
   | { type: "texte"; texte: string }
   | { type: "fin"; usage: Usage }
 
+/**
+ * Le contexte, en trois couches, de la plus stable à la plus changeante.
+ *
+ * Cette séparation n'est pas de l'esthétique : c'est elle qui décide de la
+ * facture. Le tuteur renvoie le programme officiel entier à CHAQUE message.
+ * Anthropic sait ne le facturer qu'une fois si on lui dit où s'arrête la
+ * partie stable — environ 90 % d'économie sur le préfixe. Sans ce repère, on
+ * paie le programme complet à chaque réplique.
+ *
+ * Chaque fournisseur le traduit dans son propre dialecte, ou l'ignore s'il
+ * n'en a pas. C'est le travail de l'adaptateur, pas celui de l'appelant.
+ */
 export type Demande = {
-  /** Qui est le tuteur, ce qu'il sait de l'élève, ce qu'il n'a pas le droit de faire. */
+  /** Qui est le tuteur, ce qu'il n'a pas le droit de faire. Ne change jamais. */
   systeme: string
+  /** Le programme officiel. Change à chaque matière, pas à chaque message. */
+  stable?: string
+  /** La leçon du jour, la mémoire de l'élève. Change à chaque séance. */
+  volatil?: string
   messages: Message[]
   modele: string
   /** Plafond de sortie. Une réponse qui ne s'arrête jamais coûte sans fin. */
