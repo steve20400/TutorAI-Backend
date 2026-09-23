@@ -89,10 +89,25 @@ export async function routesCompte(app: FastifyInstance): Promise<void> {
 
       if (Object.keys(aEcrire).length === 0) return { ok: true }
 
-      const { error } = await supabasePour(requete)
+      const moi = utilisateurDe(requete)
+      const supabase = supabasePour(requete)
+
+      const { error } = await supabase
         .from("profils")
         .update(aEcrire)
-        .eq("id", utilisateurDe(requete))
+        .eq("id", moi)
+
+      // La fiche d'un répétiteur porte sa propre `photo_url`, lue par
+      // l'annuaire des familles. La recopier ici évite de faire choisir à
+      // chaque écran laquelle des deux regarder — et un répétiteur dont la
+      // photo n'apparaît que sur son compte, pas dans l'annuaire, croirait
+      // qu'elle n'a pas été enregistrée.
+      if (!error && aEcrire.photo_url !== undefined) {
+        await supabase
+          .from("repetiteurs")
+          .update({ photo_url: aEcrire.photo_url })
+          .eq("id", moi)
+      }
 
       if (error) {
         requete.log.warn({ error }, "modification de profil refusee")
