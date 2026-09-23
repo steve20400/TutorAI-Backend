@@ -296,7 +296,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           .maybeSingle(),
         supabase
           .from("pieces_justificatives")
-          .select("type_cle, statut, motif, cree_le")
+          .select("id, type_cle, statut, motif, chemin, deposee_le")
           .eq("repetiteur_id", id),
         // La liste des pièces attendues vient avec : sans elle, l'écran ne
         // peut pas montrer ce qui MANQUE, et une pièce absente ne se voit pas.
@@ -318,6 +318,87 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         profil: profil.data,
         pieces: pieces.data ?? [],
         types: types.data ?? [],
+      }
+    },
+  )
+
+  /**
+   * Ouvrir une pièce justificative, sans la rendre publique.
+   *
+   * Le bucket est privé : ces fichiers sont des cartes d'identité et des
+   * extraits de casier judiciaire. On ne sert donc jamais l'URL du fichier,
+   * mais une URL SIGNÉE, valable quelques minutes et liée à cette demande.
+   *
+   * Quinze minutes : assez pour consulter un dossier entier sans relancer,
+   * trop peu pour qu'un lien copié dans un message reste utilisable demain.
+   * Un lien qui ne périme pas est un lien qui circule.
+   *
+   * La consultation est journalisée. L'administration voit tout — c'est la
+   * condition de son travail — mais voir la pièce d'identité de quelqu'un
+   * laisse une trace, comme le reste. C'est ce qui distingue un droit d'un
+   * pouvoir.
+   */
+  app.get(
+    "/pieces/:id/ouvrir",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "URL signée d'une pièce, valable quelques minutes",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+
+      const { data: piece } = await supabase
+        .from("pieces_justificatives")
+        .select("id, repetiteur_id, type_cle, chemin")
+        .eq("id", id)
+        .maybeSingle()
+
+      if (!piece?.chemin) {
+        return reponse.code(404).send({
+          erreur: "piece_introuvable",
+          message: "Cette pièce n'existe pas ou n'a pas de fichier.",
+        })
+      }
+
+      const { data, error } = await supabase.storage
+        .from("pieces")
+        .createSignedUrl(piece.chemin as string, 900)
+
+      if (error || !data?.signedUrl) {
+        requete.log.error({ error }, "signature de piece impossible")
+        return reponse.code(502).send({
+          erreur: "piece_indisponible",
+          message: "Le fichier n'a pas pu être ouvert.",
+        })
+      }
+
+      await journaliser(
+        supabase,
+        utilisateurDe(requete),
+        "consultation_piece",
+        "piece",
+        id,
+        piece.type_cle as string,
+      )
+
+      // Le type est déduit de l'extension : le lecteur doit savoir s'il
+      // affiche une image ou un document avant de charger quoi que ce soit.
+      const chemin = piece.chemin as string
+      const extension = chemin.slice(chemin.lastIndexOf(".") + 1).toLowerCase()
+
+      return {
+        url: data.signedUrl,
+        type: extension === "pdf" ? "pdf" : "image",
+        expireDans: 900,
       }
     },
   )
