@@ -128,6 +128,150 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     },
   )
 
+  app.get(
+    "/dossiers/:id",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Une fiche et ses pièces",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+
+      const [fiche, profil, pieces] = await Promise.all([
+        supabase
+          .from("repetiteurs")
+          .select(
+            "id, ville, bio, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, statut, verifie_le, motif_refus",
+          )
+          .eq("id", id)
+          .maybeSingle(),
+        supabase
+          .from("profils")
+          .select("prenom, nom, identifiant, telephone, desactive_le, motif_desactivation")
+          .eq("id", id)
+          .maybeSingle(),
+        supabase
+          .from("pieces_justificatives")
+          .select("type_cle, statut, motif, cree_le")
+          .eq("repetiteur_id", id),
+      ])
+
+      if (!fiche.data) {
+        return reponse.code(404).send({
+          erreur: "dossier_introuvable",
+          message: "Cette fiche n'existe pas.",
+        })
+      }
+
+      return {
+        fiche: fiche.data,
+        profil: profil.data,
+        pieces: pieces.data ?? [],
+      }
+    },
+  )
+
+  // ── Annuaire complet, tous statuts ──────────────────────────────────────
+  app.get(
+    "/repetiteurs",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Toutes les fiches, avec l'identité",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const supabase = supabasePour(requete)
+
+      const { data: fiches, error } = await supabase
+        .from("repetiteurs")
+        .select("id, ville, matieres, niveaux, statut, verifie_le, cree_le")
+        .order("cree_le", { ascending: false })
+
+      if (error) return echec(requete, reponse, error, "repetiteurs")
+
+      const ids = (fiches ?? []).map((f) => f.id as string)
+      if (ids.length === 0) return { donnees: [] }
+
+      const { data: profils } = await supabase
+        .from("profils")
+        .select("id, prenom, nom, identifiant, desactive_le")
+        .in("id", ids)
+
+      const parId = new Map((profils ?? []).map((p) => [p.id as string, p]))
+
+      // Le rapprochement se fait ici plutôt qu'avec une jointure PostgREST :
+      // `repetiteurs` et `profils` n'ont pas de clé étrangère déclarée entre
+      // elles, et en poser une pour le confort d'une requête changerait le
+      // schéma pour une raison d'affichage.
+      return {
+        donnees: (fiches ?? []).map((f) => ({
+          ...f,
+          profil: parId.get(f.id as string) ?? null,
+        })),
+      }
+    },
+  )
+
+  // ── Familles ────────────────────────────────────────────────────────────
+  app.get(
+    "/familles",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Parents et enfants rattachés",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const supabase = supabasePour(requete)
+
+      const { data: parents, error } = await supabase
+        .from("profils")
+        .select("id, prenom, nom, identifiant, telephone, pays, cree_le, desactive_le")
+        .eq("role", "parent")
+        .order("cree_le", { ascending: false })
+
+      if (error) return echec(requete, reponse, error, "familles")
+
+      const { data: liens } = await supabase
+        .from("liens_familiaux")
+        .select("parent_id, eleve_id")
+
+      const idsEnfants = (liens ?? []).map((l) => l.eleve_id as string)
+      const { data: enfants } = idsEnfants.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant")
+            .in("id", idsEnfants)
+        : { data: [] as { id: string }[] }
+
+      const parEnfant = new Map(
+        (enfants ?? []).map((e) => [e.id as string, e]),
+      )
+
+      return {
+        donnees: (parents ?? []).map((p) => ({
+          ...p,
+          enfants: (liens ?? [])
+            .filter((l) => l.parent_id === p.id)
+            .map((l) => parEnfant.get(l.eleve_id as string))
+            .filter(Boolean),
+        })),
+      }
+    },
+  )
+
   // ── Comptes ─────────────────────────────────────────────────────────────
   app.post(
     "/comptes/:id/desactivation",
@@ -306,6 +450,43 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .maybeSingle()
       if (error) return echec(requete, reponse, error, "facturation")
       return data ?? {}
+    },
+  )
+
+  app.post(
+    "/facturation",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Changer le réglage de facturation",
+        description:
+          "Le montant et le pourcentage sont conservés tous les deux, même " +
+          "quand un seul s'applique : basculer d'un mode à l'autre ne doit " +
+          "pas effacer le réglage qu'on vient de quitter.",
+        security: securite,
+        body: {
+          type: "object",
+          properties: {
+            mode: { type: "string", enum: ["par_eleve_actif", "pourcentage_gains"] },
+            montant_par_eleve: { type: "integer", minimum: 0 },
+            pourcentage: { type: "number", minimum: 0, maximum: 100 },
+            delai_masquage_jours: { type: "integer", minimum: 0, maximum: 365 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const corps = requete.body as Record<string, unknown>
+
+      // Seuls les champs présents sont écrits : un PATCH partiel, pour que
+      // changer le délai n'efface pas le montant.
+      const { error } = await supabasePour(requete)
+        .from("facturation")
+        .update(corps)
+        .eq("id", 1)
+
+      if (error) return echec(requete, reponse, error, "facturation")
+      return { ok: true }
     },
   )
 
