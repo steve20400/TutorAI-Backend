@@ -194,7 +194,14 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
       // Le déclencheur `proteger_verification_repetiteur` refuserait cette
       // écriture à quiconque n'est pas administrateur, même en passant par ici.
-      const { error } = await supabasePour(requete)
+      // `.select()` n'est pas décoratif : un UPDATE qui ne touche AUCUNE
+      // ligne réussit sans rien dire. C'est ce qui s'est produit ici pendant
+      // des semaines — la RLS ne donnait aucun droit d'écriture à
+      // l'administration, l'update ne trouvait rien, `error` restait nul, et
+      // la route répondait « ok » en inscrivant au registre une vérification
+      // qui n'avait pas eu lieu. Un registre qui se trompe est pire qu'un
+      // registre vide.
+      const { data, error } = await supabasePour(requete)
         .from("repetiteurs")
         .update({
           statut: "verifie",
@@ -202,8 +209,17 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           motif_refus: null,
         })
         .eq("id", id)
+        .select("id")
 
       if (error) return echec(requete, reponse, error, "cachet")
+      if (!data || data.length === 0) {
+        return reponse.code(403).send({
+          erreur: "cachet_refuse",
+          message:
+            "Ce dossier n'a pas pu être vérifié. Il n'existe pas, ou vous " +
+            "n'avez pas le droit d'y toucher.",
+        })
+      }
 
       await journaliser(
         supabasePour(requete),
@@ -244,12 +260,21 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const { id } = requete.params as { id: string }
       const { motif } = requete.body as { motif: string }
 
-      const { error } = await supabasePour(requete)
+      const { data, error } = await supabasePour(requete)
         .from("repetiteurs")
         .update({ statut: "refuse", motif_refus: motif, verifie_le: null })
         .eq("id", id)
+        .select("id")
 
       if (error) return echec(requete, reponse, error, "refus")
+      if (!data || data.length === 0) {
+        return reponse.code(403).send({
+          erreur: "refus_impossible",
+          message:
+            "Ce dossier n'a pas pu être refusé. Il n'existe pas, ou vous " +
+            "n'avez pas le droit d'y toucher.",
+        })
+      }
 
       await journaliser(
         supabasePour(requete),
@@ -926,12 +951,19 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         }
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("parametres")
         .update({ valeur, maj_le: new Date().toISOString() })
         .eq("cle", cle)
+        .select("cle")
 
       if (error) return echec(requete, reponse, error, "parametre")
+      if (!data || data.length === 0) {
+        return reponse.code(403).send({
+          erreur: "reglage_refuse",
+          message: "Ce réglage n'a pas pu être modifié.",
+        })
+      }
 
       // Un module s'allume ou s'éteint ; une résolution vidéo ou un nombre de
       // participants se règle. Écrire « desactivation » pour un passage en
@@ -1075,12 +1107,19 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
       // Seuls les champs présents sont écrits : un PATCH partiel, pour que
       // changer le délai n'efface pas le montant.
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("facturation")
         .update(corps)
         .eq("id", 1)
+        .select("id")
 
       if (error) return echec(requete, reponse, error, "facturation")
+      if (!data || data.length === 0) {
+        return reponse.code(403).send({
+          erreur: "facturation_refusee",
+          message: "Le barème n'a pas pu être modifié.",
+        })
+      }
 
       await journaliser(
         supabasePour(requete),

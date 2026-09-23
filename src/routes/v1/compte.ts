@@ -76,15 +76,23 @@ export async function routesCompte(app: FastifyInstance): Promise<void> {
         }
       }
 
-      // L'identifiant en majuscules sans espaces : c'est un nom de connexion,
-      // pas un pseudonyme. « Galilée » et « GALILEE » doivent mener au même
-      // compte, et un espace en fin de saisie ne doit pas créer un doublon
-      // invisible.
+      // L'identifiant est un nom de personne, pas un nom de fichier : en
+      // minuscules, espaces compris. « Alain Nkoulou » devient « alain
+      // nkoulou », qui se tape sans l'avoir appris.
+      //
+      // La même mise en forme existe en base (`normaliser_identifiant`), et
+      // c'est elle qui fait foi : un index unique sur `lower(identifiant)`
+      // refuse deux comptes qui ne différeraient que par la casse. Ce qui est
+      // fait ici sert à envoyer une valeur déjà propre, pas à protéger.
       if (typeof corps.identifiant === "string" && corps.identifiant.trim()) {
-        aEcrire.identifiant = corps.identifiant
+        const propre = corps.identifiant
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9'\- ]+/g, " ")
+          .replace(/\s+/g, " ")
           .trim()
-          .toUpperCase()
-          .replace(/\s+/g, "-")
+        if (propre) aEcrire.identifiant = propre
       }
 
       if (Object.keys(aEcrire).length === 0) return { ok: true }
