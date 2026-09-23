@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify"
 
+import { configurationDuTuteur, oublierLaConfiguration } from "../../ia/configuration.js"
+import { FOURNISSEURS_CONNUS } from "../../ia/index.js"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import {
@@ -1156,6 +1159,61 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .limit(limite)
       if (error) return echec(requete, reponse, error, "registre")
       return { donnees: data ?? [] }
+    },
+  )
+
+  app.get(
+    "/tuteur/etat",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Le tuteur est-il en état de répondre",
+        description:
+          "Dit ce qui manque, sans jamais montrer la clé. Trois choses " +
+          "doivent être vraies pour qu'un élève obtienne une réponse : le " +
+          "service joint la base, une clé est posée, et le module est allumé.",
+        security: securite,
+      },
+    },
+    async (requete) => {
+      let joignable = false
+      let clePosee = false
+      let fournisseur = "?"
+      let modele = "?"
+      let pourquoi: string | null = null
+
+      try {
+        // On oublie d'abord : sinon on lirait une réponse vieille de trente
+        // secondes, et l'administration croirait sa clé sans effet.
+        oublierLaConfiguration()
+        const c = await configurationDuTuteur(Date.now())
+        joignable = true
+        fournisseur = c.fournisseur
+        modele = c.modeleCompte
+        clePosee = Boolean(c.cle) || c.fournisseur === "compatible"
+      } catch (e) {
+        pourquoi = e instanceof Error ? e.message : "cause inconnue"
+        requete.log.warn({ e }, "etat du tuteur : base injoignable")
+      }
+
+      const { data: reglage } = await supabasePour(requete)
+        .from("parametres")
+        .select("valeur")
+        .eq("cle", "ia_active")
+        .maybeSingle()
+
+      const moduleAllume = reglage?.valeur === true
+
+      return {
+        joignable,
+        clePosee,
+        moduleAllume,
+        fournisseur,
+        modele,
+        fournisseursConnus: FOURNISSEURS_CONNUS,
+        pretARepondre: joignable && clePosee && moduleAllume,
+        pourquoi,
+      }
     },
   )
 }
