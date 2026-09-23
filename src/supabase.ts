@@ -43,10 +43,17 @@ export function supabasePour(requete: FastifyRequest): SupabaseClient {
   const deja = clientsParRequete.get(requete)
   if (deja) return deja
 
-  const autorisation = requete.headers.authorization
+  // Sans session, on s'annonce explicitement comme visiteur anonyme en
+  // présentant la clé publiable. Laisser l'en-tête vide faisait répondre à
+  // PostgREST « Empty JWT is sent in Authorization header » — donc 502 sur
+  // les routes ouvertes, comme l'annuaire ou la liste des villes, alors
+  // qu'elles sont précisément celles qu'on veut lisibles sans compte.
+  const autorisation =
+    requete.headers.authorization?.trim() ||
+    `Bearer ${config.supabase.clePubliable}`
 
   const client = createClient(config.supabase.url, config.supabase.clePubliable, {
-    global: { headers: autorisation ? { Authorization: autorisation } : {} },
+    global: { headers: { Authorization: autorisation } },
     // Un serveur sans navigateur : rien à stocker, rien à rafraîchir.
     auth: {
       persistSession: false,
@@ -97,4 +104,36 @@ export function utilisateurDe(requete: FastifyRequest): string {
     )
   }
   return id
+}
+
+/**
+ * À placer en `preHandler` après `exigerSession` sur les routes d'administration.
+ *
+ * Ce n'est PAS la garde de sécurité : celle-ci est dans les politiques, et
+ * elle tiendrait même si cette fonction disparaissait — un non-administrateur
+ * qui appellerait `/v1/admin/registre` recevrait une liste vide plutôt que le
+ * registre.
+ *
+ * Elle existe pour la lisibilité du refus. Une liste vide se lit comme « il
+ * n'y a rien à voir », jamais comme « vous n'avez pas le droit de regarder » :
+ * c'est exactement la confusion qui a fait vivre trois tables sans politique
+ * pendant des semaines, personne ne distinguant l'écran vide de l'écran
+ * interdit.
+ */
+export async function exigerAdmin(
+  requete: FastifyRequest,
+  reponse: FastifyReply,
+): Promise<void> {
+  const { data } = await supabasePour(requete)
+    .from("profils")
+    .select("role")
+    .eq("id", utilisateurDe(requete))
+    .maybeSingle()
+
+  if (data?.role !== "admin") {
+    return reponse.code(403).send({
+      erreur: "reserve_administration",
+      message: "Cette ressource est réservée à l'administration.",
+    })
+  }
 }
