@@ -22,6 +22,85 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
   const securite = [{ porteur: [] as string[] }]
 
+  /**
+   * Tout le tableau de bord en un appel.
+   *
+   * Six requêtes séparées auraient voulu dire six allers-retours vers Render.
+   * Sur un service gratuit qui s'endort, le premier chargement de la journée
+   * aurait dépassé la minute — et l'écran d'accueil de l'administration est
+   * précisément celui qu'on ouvre en arrivant.
+   */
+  app.get(
+    "/tableau-de-bord",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Chiffres et couverture",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const supabase = supabasePour(requete)
+
+      const [attente, verifies, familles, enCours, villes, cles] =
+        await Promise.all([
+          supabase
+            .from("repetiteurs")
+            .select("id", { count: "exact", head: true })
+            .eq("statut", "en_attente"),
+          supabase.from("repetiteurs").select("ville").eq("statut", "verifie"),
+          supabase
+            .from("profils")
+            .select("id", { count: "exact", head: true })
+            .eq("role", "parent"),
+          supabase
+            .from("seances_humaines")
+            .select("id", { count: "exact", head: true })
+            .not("demarree_le", "is", null)
+            .is("terminee_le", null),
+          supabase
+            .from("villes")
+            .select("nom, lon, lat")
+            .eq("visible", true)
+            .order("nom"),
+          supabase
+            .from("cles_api")
+            .select("nom, valeur")
+            .in("nom", ["carte_style", "carte_cle"]),
+        ])
+
+      if (verifies.error) return echec(requete, reponse, verifies.error, "tableau de bord")
+
+      // Répartition par ville, calculée ici : la base ne sait pas regrouper
+      // sans vue dédiée, et le volume reste minuscule pendant des années.
+      const comptes: Record<string, number> = {}
+      for (const r of verifies.data ?? []) {
+        const ville = ((r.ville as string | null) ?? "").trim()
+        if (ville) comptes[ville] = (comptes[ville] ?? 0) + 1
+      }
+
+      // Le style est composé ici : `{cle}` y est remplacé par la clé du
+      // fournisseur, que l'appelant n'a donc pas à connaître ni à assembler.
+      const parNom = new Map(
+        ((cles.data ?? []) as { nom: string; valeur: string | null }[]).map(
+          (c) => [c.nom, c.valeur],
+        ),
+      )
+      const styleCarte = (
+        parNom.get("carte_style") ?? "https://demotiles.maplibre.org/style.json"
+      ).replace("{cle}", parNom.get("carte_cle") ?? "")
+
+      return {
+        aVerifier: attente.count ?? 0,
+        familles: familles.count ?? 0,
+        seancesEnCours: enCours.count ?? 0,
+        villes: villes.data ?? [],
+        comptes,
+        styleCarte,
+      }
+    },
+  )
+
   // ── Dossiers en attente de vérification ─────────────────────────────────
   app.get(
     "/dossiers",
