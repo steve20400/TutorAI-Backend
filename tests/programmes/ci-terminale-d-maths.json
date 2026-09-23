@@ -1,0 +1,117 @@
+{
+  "source": {
+    "pays": "Côte d'Ivoire",
+    "autorite": "MENA — Direction de la Pédagogie et de la Formation Continue (DPFC)",
+    "document": "Programmes éducatifs et guides d'exécution — Mathématiques — Terminale D",
+    "url": "https://dpfc-ci.net/?page_id=283",
+    "statut_droits": "Document public ministériel — indexable et redistribuable",
+    "note": "Structure officielle : Compétence > Thème > Leçon > (Habiletés x Contenus)"
+  },
+  "niveau": "Terminale D",
+  "matiere": "Mathématiques",
+  "regime_pedagogique": {
+    "semaines_par_an": 32,
+    "heures_par_semaine": 6,
+    "heures_par_an": 192
+  },
+  "competences": [
+    {
+      "id": "C1",
+      "intitule": "Traiter une situation relative aux calculs algébriques et aux fonctions.",
+      "themes": [
+        {
+          "id": "C1-T1",
+          "intitule": "Calculs algébriques",
+          "lecons": [
+            {
+              "id": "L1.1",
+              "titre": "Nombres complexes",
+              "prerequis": ["Première D — Équations et inéquations du second degré"],
+              "habiletes": {
+                "Identifier": [
+                  "la partie réelle, la partie imaginaire d'un nombre complexe",
+                  "la forme algébrique, trigonométrique, exponentielle d'un nombre complexe"
+                ],
+                "Connaitre": [
+                  "la définition du module et d'un argument",
+                  "les propriétés du module (produit, inverse, quotient, puissance entière)",
+                  "les propriétés du conjugué",
+                  "l'affixe d'un point, d'un vecteur ; le point image, le vecteur image",
+                  "la définition d'une racine carrée, d'une racine n-ième d'un complexe non nul",
+                  "les racines n-ièmes de l'unité",
+                  "la formule de Moivre, la formule d'Euler",
+                  "les caractérisations complexes d'un cercle, d'une droite, d'une demi-droite"
+                ],
+                "Determiner": [
+                  "la forme algébrique, la forme trigonométrique d'un nombre complexe",
+                  "le conjugué d'un nombre complexe",
+                  "le module et un argument d'un nombre complexe non nul",
+                  "des lieux géométriques à l'aide des nombres complexes",
+                  "les racines carrées d'un nombre complexe",
+                  "les racines n-ièmes d'un nombre complexe non nul"
+                ],
+                "Calculer": [
+                  "la somme, le produit et le quotient de deux nombres complexes",
+                  "la puissance d'un nombre complexe"
+                ],
+                "Lineariser": ["des puissances de cos x et sin x"],
+                "Resoudre": [
+                  "une équation du second degré à coefficients complexes ainsi que des équations s'y ramenant",
+                  "une équation se ramenant du second degré à coefficients complexes"
+                ],
+                "Placer": [
+                  "les points images des racines n-ièmes d'un complexe sur le cercle trigonométrique, connaissant l'une d'elles"
+                ],
+                "Utiliser": [
+                  "les formules de Moivre et d'Euler pour transformer des produits en somme dans des expressions trigonométriques"
+                ],
+                "Traiter_une_situation": ["faisant appel aux nombres complexes"]
+              }
+            }
+          ]
+        },
+        {
+          "id": "C1-T2",
+          "intitule": "Fonctions",
+          "lecons": [
+            { "id": "L1.2", "titre": "Limites et continuité d'une fonction" },
+            { "id": "L1.3", "titre": "Dérivabilité et étude de fonctions" },
+            { "id": "L1.4", "titre": "Primitives" },
+            { "id": "L1.5", "titre": "Fonctions logarithmes" },
+            { "id": "L1.6", "titre": "Fonctions exponentielles, fonctions puissances" },
+            { "id": "L1.7", "titre": "Calcul intégral" },
+            { "id": "L1.8", "titre": "Suites numériques" },
+            { "id": "L1.9", "titre": "Équations différentielles" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "intitule": "Traiter une situation relative à la modélisation de phénomènes aléatoires, à l'organisation et au traitement des données.",
+      "themes": [
+        {
+          "id": "C2-T1",
+          "intitule": "Organisation et traitement des données",
+          "lecons": [{ "id": "L2.1", "titre": "Statistiques à deux variables" }]
+        },
+        {
+          "id": "C2-T2",
+          "intitule": "Modélisation d'un phénomène aléatoire",
+          "lecons": [{ "id": "L2.2", "titre": "Probabilité conditionnelle et variable aléatoire" }]
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "intitule": "Traiter une situation relative à la géométrie du plan, à la géométrie de l'espace et aux transformations du plan.",
+      "themes": [
+        {
+          "id": "C3-T1",
+          "intitule": "Géométrie du plan",
+          "lecons": [{ "id": "L3.1", "titre": "Nombres complexes et transformations du plan" }]
+        }
+      ]
+    }
+  ]
+}

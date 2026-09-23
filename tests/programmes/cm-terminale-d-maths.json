@@ -1,0 +1,56 @@
+{
+  "_statut": "SQUELETTE À COMPLÉTER — la liste des modules et leçons doit être saisie depuis le PDF officiel MINESEC. Ne pas remplir de mémoire : le contenu réel du programme camerounais n'a pas pu être vérifié.",
+  "source": {
+    "pays": "Cameroun",
+    "autorite": "MINESEC — Inspection Générale des Enseignements (IGE)",
+    "document": "Programme d'études APC — Mathématiques — Terminale D",
+    "sous_systeme": "francophone",
+    "reference_reglementaire": "Arrêté n°227/18/MINESEC/IGE du 23 août 2018 (organisation des séries du second cycle)",
+    "depot_officiel": "https://files.minesec.gov.cm/folder/147/PROGRAMME_Tle",
+    "depot_officiel_etat": "Arborescence en ligne mais DOSSIERS VIDES au 4 septembre 2026 (vérifié). Les PDF ne sont pas téléchargeables depuis le serveur du ministère.",
+    "statut_droits": "Document public ministériel — indexable et redistribuable",
+    "a_faire": "Récupérer le PDF officiel (voir PISTES ci-dessous) puis remplir modules[] et lecons[]"
+  },
+  "_pistes_recuperation": [
+    "Demander le programme officiel à l'Inspection Générale des Enseignements (IGE), section Sciences, MINESEC Yaoundé",
+    "Acheter la brochure officielle des programmes en librairie scolaire",
+    "Récupérer une copie auprès d'un enseignant de mathématiques de Terminale D",
+    "Copies circulant sur edukamer.info (à vérifier contre la version officielle avant usage)"
+  ],
+  "niveau": "Terminale D",
+  "matiere": "Mathématiques",
+  "series_second_cycle_cameroun": {
+    "litteraires": ["A1", "A2", "A3", "A4", "A5", "ABI (bilingue)"],
+    "scientifiques_et_technologiques": ["C", "D", "TI"],
+    "humanites": ["SH"],
+    "arts_et_cinematographie": ["AC"],
+    "_note": "La série E apparaît dans certaines compilations de programmes. À confirmer sur le document officiel."
+  },
+  "_schema_apc_cameroun": {
+    "_explication": "Le Cameroun applique l'APC/ESV — Approche Par les Compétences avec entrée par les situations de vie. La hiérarchie officielle diffère de celle de la Côte d'Ivoire : ici c'est Module > Famille de situations > Leçon.",
+    "hierarchie": ["competence", "module", "famille_de_situations", "lecon", "savoirs / savoir-faire / savoir-être"]
+  },
+  "modules": [
+    {
+      "id": "M1",
+      "intitule": "À COMPLÉTER depuis le PDF officiel",
+      "familles_de_situations": [
+        {
+          "intitule": "À COMPLÉTER",
+          "lecons": [
+            {
+              "id": "L1.1",
+              "titre": "À COMPLÉTER",
+              "duree_indicative": null,
+              "prerequis": [],
+              "savoirs": [],
+              "savoir_faire": [],
+              "exemple_de_situation": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "_modele_rempli": "Voir programme_terminale_D_maths_ci.json pour un exemple de ce fichier une fois complété (programme ivoirien, structure Compétence > Thème > Leçon > Habiletés x Contenus). Il sert de modèle de mise en forme, PAS de source de contenu pour le Cameroun."
+}

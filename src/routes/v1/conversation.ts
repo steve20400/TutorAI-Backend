@@ -9,10 +9,11 @@ import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
  * répétiteur. Ce sont deux tables et deux promesses différentes : l'une est un
  * échange avec un modèle, l'autre un adulte en face d'un enfant.
  *
- * L'envoi d'un message n'est PAS ici : il appelle Anthropic, dépense des
- * crédits, et vit dans le site où la clé est déjà configurée. Le déplacer
- * demanderait de transporter aussi la clé et le prompt — un travail qui a sa
- * place avec la salle de cours, quand les flux temps réel seront tranchés.
+ * L'envoi d'un message est dans `message.js`, à part : il répond en flux, ce
+ * qui demande de court-circuiter la sérialisation de Fastify, et les routes
+ * d'ici répondent toutes en JSON. Il vivait dans le site jusqu'au 24 septembre
+ * 2026, avec la clé dans l'environnement de Vercel et un accès direct à la
+ * base — ce qui est précisément ce qu'on avait décidé d'arrêter.
  */
 export async function routesConversation(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", exigerSession)
