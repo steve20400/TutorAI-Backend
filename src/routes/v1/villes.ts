@@ -74,3 +74,34 @@ export async function routesParametres(app: FastifyInstance): Promise<void> {
     },
   )
 }
+
+/**
+ * Coordonnées de contact, lisibles sans session.
+ *
+ * Elles s'adressent d'abord à qui ne peut PAS se connecter : un compte
+ * désactivé qui veut contester. Les réserver aux gens authentifiés reviendrait
+ * à cacher la sonnette derrière la porte fermée.
+ *
+ * Seules les clés publiques sortent — la politique de `cles_api` ne renvoie
+ * que celles-là, quelle que soit la requête écrite ici.
+ */
+export async function routesContact(app: FastifyInstance): Promise<void> {
+  app.get(
+    "/contact",
+    {
+      schema: {
+        tags: ["référentiel"],
+        summary: "Où écrire à l'administration",
+      },
+    },
+    async (requete) => {
+      const { data } = await supabasePour(requete)
+        .from("cles_api")
+        .select("nom, valeur")
+        .eq("nom", "contact_administration")
+        .maybeSingle()
+
+      return { contact_administration: data?.valeur ?? null }
+    },
+  )
+}
