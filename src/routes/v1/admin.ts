@@ -380,7 +380,9 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
       const { data: parents, error } = await supabase
         .from("profils")
-        .select("id, prenom, nom, identifiant, telephone, pays, cree_le, desactive_le")
+        .select(
+          "id, prenom, nom, identifiant, telephone, pays, cree_le, desactive_le, photo_url",
+        )
         .eq("role", "parent")
         .order("cree_le", { ascending: false })
 
@@ -410,6 +412,109 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
             .map((l) => parEnfant.get(l.eleve_id as string))
             .filter(Boolean),
         })),
+      }
+    },
+  )
+
+  /**
+   * Une famille : le parent, ses enfants, et ce qui les lie à des répétiteurs.
+   *
+   * C'est l'écran d'arbitrage. Le jour où un parent conteste quelque chose, il
+   * faut pouvoir dire qui est cette famille, avec quel répétiteur, depuis
+   * quand, et combien de séances ont eu lieu. Une liste de noms ne répond à
+   * aucune de ces questions.
+   */
+  app.get(
+    "/familles/:id",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Une famille et son suivi",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+
+      const { data: parent } = await supabase
+        .from("profils")
+        .select(
+          "id, prenom, nom, identifiant, telephone, pays, cree_le, desactive_le, motif_desactivation",
+        )
+        .eq("id", id)
+        .eq("role", "parent")
+        .maybeSingle()
+
+      if (!parent) {
+        return reponse.code(404).send({
+          erreur: "famille_introuvable",
+          message: "Cette famille n'existe pas.",
+        })
+      }
+
+      const { data: liens } = await supabase
+        .from("liens_familiaux")
+        .select("eleve_id, cree_le")
+        .eq("parent_id", id)
+
+      const idsEnfants = (liens ?? []).map((l) => l.eleve_id as string)
+
+      const [enfants, contrats] = await Promise.all([
+        idsEnfants.length
+          ? supabase
+              .from("profils")
+              .select("id, prenom, nom, identifiant, cree_le, desactive_le")
+              .in("id", idsEnfants)
+          : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+        supabase
+          .from("contrats")
+          .select(
+            "id, eleve_id, repetiteur_id, matiere, tarif, frequence, demarre_le, termine_le",
+          )
+          .eq("parent_id", id),
+      ])
+
+      // Le nom du répétiteur, pas seulement son identifiant : « contrat avec
+      // 8f3a-… » n'aide personne à comprendre un litige.
+      const idsRepetiteurs = [
+        ...new Set((contrats.data ?? []).map((c) => c.repetiteur_id as string)),
+      ]
+      const { data: repetiteurs } = idsRepetiteurs.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant")
+            .in("id", idsRepetiteurs)
+        : { data: [] as Record<string, unknown>[] }
+
+      const parRepetiteur = new Map(
+        (repetiteurs ?? []).map((r) => [r.id as string, r]),
+      )
+
+      // Combien de séances par contrat : c'est le chiffre qu'on cherche quand
+      // quelqu'un affirme qu'il n'y en a jamais eu.
+      const idsContrats = (contrats.data ?? []).map((c) => c.id as string)
+      const { data: seances } = idsContrats.length
+        ? await supabase
+            .from("seances_humaines")
+            .select("id, contrat_id, demarree_le, terminee_le")
+            .in("contrat_id", idsContrats)
+        : { data: [] as Record<string, unknown>[] }
+
+      return {
+        parent,
+        enfants: enfants.data ?? [],
+        contrats: (contrats.data ?? []).map((c) => ({
+          ...c,
+          repetiteur: parRepetiteur.get(c.repetiteur_id as string) ?? null,
+          seances: (seances ?? []).filter((s) => s.contrat_id === c.id).length,
+        })),
+        seances: seances ?? [],
       }
     },
   )
