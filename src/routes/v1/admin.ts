@@ -609,6 +609,190 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /**
+   * Les séances, toutes ou seulement celles en cours.
+   *
+   * L'administration voit tout : la surveillance est la promesse faite au
+   * parent, pas un effet de bord. Chaque ligne porte qui enseignait, à qui, et
+   * dans quelle matière — un identifiant de contrat ne dit rien à personne.
+   */
+  app.get(
+    "/seances",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Séances, avec les personnes",
+        security: securite,
+        querystring: {
+          type: "object",
+          properties: {
+            enCours: { type: "boolean", default: false },
+            limite: { type: "integer", minimum: 1, maximum: 200, default: 80 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { enCours = false, limite = 80 } = requete.query as {
+        enCours?: boolean
+        limite?: number
+      }
+      const supabase = supabasePour(requete)
+
+      let q = supabase
+        .from("seances_humaines")
+        .select(
+          "id, contrat_id, lecon_id, demarree_le, terminee_le, enregistrement_url, compte_rendu",
+        )
+        .order("demarree_le", { ascending: false, nullsFirst: false })
+        .limit(limite)
+
+      if (enCours) q = q.is("terminee_le", null).not("demarree_le", "is", null)
+
+      const { data: seances, error } = await q
+      if (error) return echec(requete, reponse, error, "seances")
+      if (!seances?.length) return { donnees: [] }
+
+      const idsContrats = [
+        ...new Set(seances.map((s) => s.contrat_id as string)),
+      ]
+      const { data: contrats } = await supabase
+        .from("contrats")
+        .select("id, matiere, eleve_id, repetiteur_id, parent_id")
+        .in("id", idsContrats)
+
+      const idsPersonnes = [
+        ...new Set(
+          (contrats ?? []).flatMap((c) => [
+            c.eleve_id as string,
+            c.repetiteur_id as string,
+          ]),
+        ),
+      ]
+      const { data: personnes } = idsPersonnes.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant, photo_url")
+            .in("id", idsPersonnes)
+        : { data: [] as Record<string, unknown>[] }
+
+      const parId = new Map((personnes ?? []).map((p) => [p.id as string, p]))
+      const parContrat = new Map(
+        (contrats ?? []).map((c) => [c.id as string, c]),
+      )
+
+      return {
+        donnees: seances.map((s) => {
+          const c = parContrat.get(s.contrat_id as string)
+          return {
+            ...s,
+            matiere: c?.matiere ?? null,
+            eleve: c ? (parId.get(c.eleve_id as string) ?? null) : null,
+            repetiteur: c
+              ? (parId.get(c.repetiteur_id as string) ?? null)
+              : null,
+            parent_id: c?.parent_id ?? null,
+          }
+        }),
+      }
+    },
+  )
+
+  /**
+   * Une séance : qui, quoi, combien de temps, et ce qu'il en reste.
+   *
+   * C'est ce qu'on ouvre quand un parent conteste. L'enregistrement et le
+   * compte rendu sont la réponse — quand ils existent. Tant que le module
+   * d'enregistrement est éteint, l'écran le dit plutôt que de laisser croire
+   * à une perte.
+   */
+  app.get(
+    "/seances/:id",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Une séance en détail",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+
+      const { data: seance } = await supabase
+        .from("seances_humaines")
+        .select(
+          "id, contrat_id, lecon_id, demarree_le, terminee_le, enregistrement_url, compte_rendu, regle",
+        )
+        .eq("id", id)
+        .maybeSingle()
+
+      if (!seance) {
+        return reponse.code(404).send({
+          erreur: "seance_introuvable",
+          message: "Cette séance n'existe pas.",
+        })
+      }
+
+      const { data: contrat } = await supabase
+        .from("contrats")
+        .select("id, matiere, tarif, frequence, eleve_id, repetiteur_id, parent_id")
+        .eq("id", seance.contrat_id as string)
+        .maybeSingle()
+
+      const ids = contrat
+        ? [contrat.eleve_id, contrat.repetiteur_id, contrat.parent_id].filter(
+            Boolean,
+          )
+        : []
+
+      const { data: personnes } = ids.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant, photo_url, telephone")
+            .in("id", ids as string[])
+        : { data: [] as Record<string, unknown>[] }
+
+      const parId = new Map((personnes ?? []).map((p) => [p.id as string, p]))
+
+      // L'enregistrement est dans le même coffre que les pièces : on ne sert
+      // jamais son URL brute, mais un lien signé qui périme.
+      let lecture: string | null = null
+      if (seance.enregistrement_url) {
+        const { data: signe } = await supabase.storage
+          .from("pieces")
+          .createSignedUrl(seance.enregistrement_url as string, 900)
+        lecture = signe?.signedUrl ?? null
+
+        await journaliser(
+          supabase,
+          utilisateurDe(requete),
+          "consultation_enregistrement",
+          "seance",
+          id,
+        )
+      }
+
+      return {
+        seance,
+        contrat,
+        eleve: contrat ? (parId.get(contrat.eleve_id as string) ?? null) : null,
+        repetiteur: contrat
+          ? (parId.get(contrat.repetiteur_id as string) ?? null)
+          : null,
+        parent: contrat
+          ? (parId.get(contrat.parent_id as string) ?? null)
+          : null,
+        enregistrement: lecture,
+      }
+    },
+  )
+
   // ── Comptes ─────────────────────────────────────────────────────────────
   app.post(
     "/comptes/:id/desactivation",
