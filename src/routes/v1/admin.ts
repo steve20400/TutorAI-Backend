@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify"
 
-import { exigerAdmin, exigerSession, supabasePour } from "../../supabase.js"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+import {
+  exigerAdmin,
+  exigerSession,
+  supabasePour,
+  utilisateurDe,
+} from "../../supabase.js"
 
 /**
  * Espace d'administration.
@@ -185,6 +192,14 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .eq("id", id)
 
       if (error) return echec(requete, reponse, error, "cachet")
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        "verification",
+        "repetiteur",
+        id,
+      )
       return { ok: true }
     },
   )
@@ -223,6 +238,15 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .eq("id", id)
 
       if (error) return echec(requete, reponse, error, "refus")
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        "refus",
+        "repetiteur",
+        id,
+        motif,
+      )
       return { ok: true }
     },
   )
@@ -485,6 +509,14 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .eq("cle", cle)
 
       if (error) return echec(requete, reponse, error, "parametre")
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        valeur === true ? "activation" : "desactivation",
+        "parametre",
+        cle,
+      )
       return { ok: true }
     },
   )
@@ -592,6 +624,14 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         .eq("id", 1)
 
       if (error) return echec(requete, reponse, error, "facturation")
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        "facturation",
+        "reglage",
+        Object.keys(corps).join(","),
+      )
       return { ok: true }
     },
   )
@@ -622,6 +662,37 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       return { donnees: data ?? [] }
     },
   )
+}
+
+/**
+ * Journalise une décision d'administration. Sans exception.
+ *
+ * C'était fait côté site avant que ces routes existent. Le déplacer ici n'est
+ * pas un rangement : une décision prise par un autre appelant — l'application
+ * mobile, un script, une future console — laissait sinon aucune trace. Le
+ * registre n'aurait plus dit « tout », seulement « tout ce qui est passé par
+ * le site », ce qui est la même chose que rien le jour où une décision est
+ * contestée.
+ *
+ * `desactiver_compte`, `reactiver_compte` et `poser_cle` journalisent
+ * elles-mêmes : elles connaissent le moment exact de la bascule, et on ne
+ * repasse pas derrière.
+ */
+async function journaliser(
+  supabase: SupabaseClient,
+  adminId: string,
+  action: string,
+  cibleType: string,
+  cibleId: string,
+  motif?: string | null,
+): Promise<void> {
+  await supabase.from("journal_admin").insert({
+    admin_id: adminId,
+    action,
+    cible_type: cibleType,
+    cible_id: cibleId,
+    motif: motif ?? null,
+  })
 }
 
 /** Réponse d'échec commune, pour ne pas la réécrire à chaque route. */
