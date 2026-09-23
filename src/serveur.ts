@@ -15,7 +15,7 @@ import { routesEnfants } from "./routes/v1/enfants.js"
 import { routesRepetiteurs } from "./routes/v1/repetiteurs.js"
 import { routesSeances } from "./routes/v1/seances.js"
 import { routesSignalements } from "./routes/v1/signalements.js"
-import { routesVilles } from "./routes/v1/villes.js"
+import { routesParametres, routesVilles } from "./routes/v1/villes.js"
 
 export async function construireServeur() {
   const app = Fastify({
@@ -67,6 +67,7 @@ export async function construireServeur() {
       await v1.register(routesSeances)
       await v1.register(routesSignalements)
       await v1.register(routesVilles)
+      await v1.register(routesParametres)
       await v1.register(routesAdmin, { prefix: "/admin" })
     },
     { prefix: "/v1" },
