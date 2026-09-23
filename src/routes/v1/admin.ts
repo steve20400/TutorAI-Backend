@@ -33,10 +33,34 @@ import {
  * Une Map plutôt qu'un Set : savoir QUELLE clé manque permet de le dire, et de
  * vérifier qu'elle est réellement posée plutôt que de refuser en bloc.
  */
-const CLES_REQUISES = new Map([
-  ["ia_active", "anthropic"],
-  ["paiement_actif", "mtn"],
-])
+/**
+ * Quelle clé un module exige avant de pouvoir s'allumer.
+ *
+ * Pour le tuteur, la réponse dépend du fournisseur choisi : exiger une clé
+ * Anthropic alors que l'administration a basculé sur Gemini garderait
+ * l'interrupteur grisé sans raison, et personne ne comprendrait pourquoi.
+ *
+ * Un serveur compatible n'exige rien : un modèle qui tourne sur la machine
+ * d'à côté n'a souvent pas de clé du tout.
+ */
+async function cleRequisePour(
+  supabase: SupabaseClient,
+  cle: string,
+): Promise<string | null> {
+  if (cle === "paiement_actif") return "mtn"
+  if (cle !== "ia_active") return null
+
+  const { data } = await supabase
+    .from("parametres")
+    .select("valeur")
+    .eq("cle", "ia_fournisseur")
+    .maybeSingle()
+
+  const fournisseur = typeof data?.valeur === "string" ? data.valeur : "anthropic"
+  if (fournisseur === "gemini") return "gemini"
+  if (fournisseur === "compatible") return null
+  return "anthropic"
+}
 
 export async function routesAdmin(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", exigerSession)
@@ -930,11 +954,23 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       // afficherait aux élèves un écran de création qui échouerait à la
       // première question — et le refus serait attribué au produit, pas au
       // réglage manquant.
-      if (valeur === true && CLES_REQUISES.has(cle)) {
+      // Le fournisseur doit être l'un de ceux qu'on sait appeler : un nom
+      // inconnu laisserait le tuteur muet, et l'erreur n'apparaîtrait qu'à la
+      // première question d'un élève.
+      if (cle === "ia_fournisseur" && !FOURNISSEURS_CONNUS.includes(String(valeur))) {
+        return reponse.code(400).send({
+          erreur: "fournisseur_inconnu",
+          message: `Fournisseur inconnu. Attendu : ${FOURNISSEURS_CONNUS.join(", ")}.`,
+        })
+      }
+
+      const cleExigee = valeur === true ? await cleRequisePour(supabase, cle) : null
+
+      if (cleExigee) {
         const { data: posee } = await supabase
           .from("cles_api")
           .select("nom, apercu")
-          .eq("nom", CLES_REQUISES.get(cle)!)
+          .eq("nom", cleExigee)
           .maybeSingle()
 
         if (!posee?.apercu) {
@@ -953,6 +989,12 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           })
         }
       }
+
+      // Le service garde la configuration du tuteur trente secondes. Après un
+      // changement fait ici, on la lui fait oublier tout de suite : sinon
+      // l'administration essaierait sa nouvelle clé et croirait qu'elle ne
+      // marche pas.
+      if (cle.startsWith("ia_")) oublierLaConfiguration()
 
       const { data, error } = await supabase
         .from("parametres")
@@ -1040,6 +1082,12 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       })
 
       if (error) return echec(requete, reponse, error, "pose de cle")
+
+      // Le service garde la configuration du tuteur trente secondes. Sans cet
+      // oubli, l'administration poserait sa clé, essaierait aussitôt, et
+      // croirait qu'elle ne fonctionne pas.
+      oublierLaConfiguration()
+
       // La valeur n'est jamais renvoyée, pas même celle qu'on vient d'écrire.
       return { ok: true }
     },
