@@ -166,7 +166,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const { id } = requete.params as { id: string }
       const supabase = supabasePour(requete)
 
-      const [fiche, profil, pieces] = await Promise.all([
+      const [fiche, profil, pieces, types] = await Promise.all([
         supabase
           .from("repetiteurs")
           .select(
@@ -183,6 +183,12 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           .from("pieces_justificatives")
           .select("type_cle, statut, motif, cree_le")
           .eq("repetiteur_id", id),
+        // La liste des pièces attendues vient avec : sans elle, l'écran ne
+        // peut pas montrer ce qui MANQUE, et une pièce absente ne se voit pas.
+        supabase
+          .from("types_pieces")
+          .select("cle, libelle_fr, libelle_en, requise, ordre")
+          .order("ordre"),
       ])
 
       if (!fiche.data) {
@@ -196,6 +202,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         fiche: fiche.data,
         profil: profil.data,
         pieces: pieces.data ?? [],
+        types: types.data ?? [],
       }
     },
   )
