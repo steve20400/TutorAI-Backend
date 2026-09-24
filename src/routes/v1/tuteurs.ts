@@ -140,15 +140,29 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
         .filter((l) => l.matiere.length >= 2 && l.niveau.length >= 1)
 
       if (propres.length) {
-        await supabase.from("matieres").upsert(
-          propres.map((l) => ({
-            nom: l.matiere,
-            ordre: 500,
-            active: true,
-            proposee_par_un_eleve: true,
-          })),
-          { onConflict: "nom", ignoreDuplicates: true },
-        )
+        await Promise.all([
+          supabase.from("matieres").upsert(
+            propres.map((l) => ({
+              nom: l.matiere,
+              ordre: 500,
+              active: true,
+              proposee_par_un_eleve: true,
+            })),
+            { onConflict: "nom", ignoreDuplicates: true },
+          ),
+          // Les classes suivent le même chemin. La liste scolaire ne peut pas
+          // tout prévoir : primaire, université, formation professionnelle —
+          // et un adulte qui révise pour lui-même n'est dans aucune classe.
+          supabase.from("niveaux").upsert(
+            [...new Set(propres.map((l) => l.niveau))].map((nom) => ({
+              nom,
+              ordre: 500,
+              actif: true,
+              propose_par_un_eleve: true,
+            })),
+            { onConflict: "nom", ignoreDuplicates: true },
+          ),
+        ])
       }
 
       const aCreer = [
