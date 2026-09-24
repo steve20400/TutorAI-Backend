@@ -676,8 +676,24 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         cible: id,
       })
 
+      // Ce que cet adulte a tenté pour se rattacher à des enfants.
+      //
+      // C'est l'information qui décide, quand on arrive ici depuis une
+      // alerte : dix refus pour quelqu'un que personne n'a jamais reconnu ne
+      // se lit pas comme dix refus pour un parent que trois enfants ont
+      // reconnu. Le premier cherche, le second s'est trompé de nom.
+      const { data: tentatives } = await supabase.rpc(
+        "tentatives_de_rattachement",
+        { adulte: id },
+      )
+
       return {
         parent: { ...parent, courriel: courriel ?? null },
+        tentatives: (tentatives as Array<{
+          refusees: number
+          acceptees: number
+          en_attente: number
+        }> | null)?.[0] ?? { refusees: 0, acceptees: 0, en_attente: 0 },
         enfants: enfants.data ?? [],
         contrats: (contrats.data ?? []).map((c) => ({
           ...c,
