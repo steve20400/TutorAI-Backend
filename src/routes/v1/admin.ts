@@ -523,7 +523,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
       const { data: liens } = await supabase
         .from("liens_familiaux")
-        .select("parent_id, eleve_id")
+        .select("parent_id, eleve_id, cree_le, actif_le")
 
       const idsEnfants = (liens ?? []).map((l) => l.eleve_id as string)
       const { data: enfants } = idsEnfants.length
@@ -537,12 +537,30 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         (enfants ?? []).map((e) => [e.id as string, e]),
       )
 
+      // L'état du lien voyage avec l'enfant : l'administration doit voir
+      // qu'un rattachement est encore provisoire. C'est pendant ces
+      // quarante-huit heures qu'une contestation peut arriver, et c'est donc
+      // là qu'elle doit pouvoir regarder.
+      const maintenant = Date.now()
+
       return {
         donnees: (parents ?? []).map((p) => ({
           ...p,
           enfants: (liens ?? [])
             .filter((l) => l.parent_id === p.id)
-            .map((l) => parEnfant.get(l.eleve_id as string))
+            .map((l) => {
+              const enfant = parEnfant.get(l.eleve_id as string)
+              if (!enfant) return null
+              const actifLe = l.actif_le as string | null
+              return {
+                ...enfant,
+                rattache_le: l.cree_le as string,
+                actif_le: actifLe,
+                provisoire: actifLe
+                  ? new Date(actifLe).getTime() > maintenant
+                  : false,
+              }
+            })
             .filter(Boolean),
         })),
       }

@@ -33,7 +33,7 @@ export async function routesEnfants(app: FastifyInstance): Promise<void> {
       // l'illusion que c'est ce code qui protège.
       const { data: liens, error } = await supabasePour(requete)
         .from("liens_familiaux")
-        .select("eleve_id")
+        .select("eleve_id, actif_le")
 
       if (error) {
         requete.log.error({ error }, "lecture des liens impossible")
@@ -52,7 +52,24 @@ export async function routesEnfants(app: FastifyInstance): Promise<void> {
         .in("id", ids)
         .order("prenom")
 
-      return { donnees: data ?? [] }
+      // L'état du lien voyage avec l'enfant. Un rattachement né d'une
+      // reconnaissance reste provisoire quarante-huit heures — pendant
+      // lesquelles l'adulte ne voit que le prénom. Sans cette information,
+      // il croirait à une panne : « je vois son nom mais rien d'autre ».
+      const quand = new Map(
+        (liens ?? []).map((l) => [l.eleve_id as string, l.actif_le as string]),
+      )
+
+      return {
+        donnees: (data ?? []).map((e) => {
+          const actifLe = quand.get(e.id as string)
+          return {
+            ...e,
+            actif_le: actifLe ?? null,
+            provisoire: actifLe ? new Date(actifLe) > new Date() : false,
+          }
+        }),
+      }
     },
   )
 
