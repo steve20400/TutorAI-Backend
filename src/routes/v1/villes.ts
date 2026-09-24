@@ -140,3 +140,50 @@ export async function routesAvatars(app: FastifyInstance): Promise<void> {
     },
   )
 }
+
+/**
+ * Le référentiel scolaire : les matières et les niveaux.
+ *
+ * Lisible sans session, comme les villes : l'annuaire filtre par matière avant
+ * même qu'un parent ait un compte.
+ *
+ * Ces deux listes étaient écrites en dur DEUX fois — ici pour la validation,
+ * dans le site pour l'affichage. Deux listes qui disent la même chose
+ * divergent toujours, et le jour où elles divergent personne ne le voit : la
+ * clé Gemini a disparu en silence pour cette raison exacte.
+ */
+export async function routesReferentiel(app: FastifyInstance): Promise<void> {
+  app.get(
+    "/referentiel",
+    {
+      schema: {
+        tags: ["référentiel"],
+        summary: "Matières et niveaux du système scolaire",
+      },
+    },
+    async (requete, reponse) => {
+      const supabase = supabasePour(requete)
+
+      const [matieres, niveaux] = await Promise.all([
+        supabase.from("matieres").select("nom").eq("active", true).order("ordre"),
+        supabase.from("niveaux").select("nom").eq("actif", true).order("ordre"),
+      ])
+
+      if (matieres.error || niveaux.error) {
+        requete.log.error(
+          { matieres: matieres.error, niveaux: niveaux.error },
+          "lecture du referentiel impossible",
+        )
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Impossible de lire le référentiel pour le moment.",
+        })
+      }
+
+      return {
+        matieres: (matieres.data ?? []).map((m) => m.nom as string),
+        niveaux: (niveaux.data ?? []).map((n) => n.nom as string),
+      }
+    },
+  )
+}

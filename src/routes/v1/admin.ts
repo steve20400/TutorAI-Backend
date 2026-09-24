@@ -34,32 +34,6 @@ import {
  * vérifier qu'elle est réellement posée plutôt que de refuser en bloc.
  */
 /**
- * Le modèle servi par défaut, pour chaque fournisseur.
- *
- * Changer de fournisseur sans changer le modèle laissait un état cassé qui ne
- * se révélait qu'à la première question d'un élève : on demandait
- * « claude-haiku » à Gemini, qui répondait « modèle inconnu ». L'administration
- * n'avait aucun moyen de le voir venir.
- *
- * Le fournisseur porte donc son modèle avec lui. Ce sont des valeurs de
- * départ, pas des cages : elles restent modifiables une par une.
- *
- * Rien pour le compatible : un modèle qu'on héberge soi-même porte le nom
- * qu'on lui a donné, et personne ici ne peut le deviner.
- */
-const MODELES_PAR_DEFAUT: Record<string, { essai: string; compte: string }> = {
-  anthropic: {
-    essai: "claude-haiku-4-5-20251001",
-    compte: "claude-haiku-4-5-20251001",
-  },
-  gemini: {
-    essai: "gemini-2.0-flash",
-    compte: "gemini-2.0-flash",
-  },
-  compatible: { essai: "", compte: "" },
-}
-
-/**
  * Quelle clé un module exige avant de pouvoir s'allumer.
  *
  * Pour le tuteur, la réponse dépend du fournisseur choisi : exiger une clé
@@ -993,18 +967,33 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       // Le fournisseur porte son modèle avec lui, sinon on demanderait
       // « claude-haiku » à Gemini et l'erreur n'apparaîtrait qu'à la première
       // question d'un élève.
+      //
+      // Les noms viennent de `parametres`, pas d'une constante : un nom de
+      // modèle est une donnée qui bouge — Google renomme, Anthropic publie —
+      // et on ne redéploie pas un service pour suivre un catalogue.
       if (cle === "ia_fournisseur") {
-        const defauts = MODELES_PAR_DEFAUT[String(valeur)]
+        const { data: table } = await supabase
+          .from("parametres")
+          .select("valeur")
+          .eq("cle", "ia_modeles_par_defaut")
+          .maybeSingle()
+
+        const tous = (table?.valeur ?? {}) as Record<
+          string,
+          { essai?: string; compte?: string }
+        >
+        const defauts = tous[String(valeur)]
+
         if (defauts) {
           const maintenant = new Date().toISOString()
           await Promise.all([
             supabase
               .from("parametres")
-              .update({ valeur: defauts.essai, maj_le: maintenant })
+              .update({ valeur: defauts.essai ?? "", maj_le: maintenant })
               .eq("cle", "ia_modele_essai"),
             supabase
               .from("parametres")
-              .update({ valeur: defauts.compte, maj_le: maintenant })
+              .update({ valeur: defauts.compte ?? "", maj_le: maintenant })
               .eq("cle", "ia_modele_compte"),
           ])
         }

@@ -25,6 +25,7 @@ import {
   routesContact,
   routesParametres,
   routesVilles,
+  routesReferentiel,
 } from "./routes/v1/villes.js"
 
 export async function construireServeur() {
@@ -77,6 +78,7 @@ export async function construireServeur() {
       await v1.register(routesSeances)
       await v1.register(routesSignalements)
       await v1.register(routesVilles)
+      await v1.register(routesReferentiel)
       await v1.register(routesParametres)
       await v1.register(routesContact)
       await v1.register(routesAvatars)

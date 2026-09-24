@@ -2,20 +2,24 @@ import type { FastifyInstance } from "fastify"
 
 import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
 
-/** Listes fermées : ce qui arrive du client est filtré contre elles. */
-const MATIERES = [
-  "Mathématiques",
-  "Physique-Chimie",
-  "SVT",
-  "Français",
-  "Anglais",
-  "Philosophie",
-  "Histoire-Géographie",
-  "Informatique",
-  "Économie",
-]
-
-const NIVEAUX = ["6e", "5e", "4e", "3e", "2nde", "1ère", "Terminale"]
+/**
+ * Le filtrage reste fermé — ce qui arrive du navigateur ne rentre pas tel
+ * quel — mais la liste vient de la base, plus du code. Le système scolaire
+ * camerounais bouge : une matière s'ajoute, un intitulé change. Rien de cela
+ * ne devrait demander un déploiement.
+ */
+async function referentiel(
+  supabase: ReturnType<typeof supabasePour>,
+): Promise<{ matieres: string[]; niveaux: string[] }> {
+  const [m, n] = await Promise.all([
+    supabase.from("matieres").select("nom").eq("active", true),
+    supabase.from("niveaux").select("nom").eq("actif", true),
+  ])
+  return {
+    matieres: (m.data ?? []).map((x) => x.nom as string),
+    niveaux: (n.data ?? []).map((x) => x.nom as string),
+  }
+}
 
 /**
  * La fiche d'un répétiteur, vue par lui-même.
@@ -101,15 +105,16 @@ export async function routesRepetiteur(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const corps = requete.body as Record<string, unknown>
       const moi = utilisateurDe(requete)
+      const connu = await referentiel(supabasePour(requete))
 
       // Les listes viennent du client : on ne garde que ce qui figure dans les
       // référentiels. Sans ce filtre, une matière inventée entrerait en base et
       // apparaîtrait dans l'annuaire des familles.
       const matieres = Array.isArray(corps.matieres)
-        ? (corps.matieres as string[]).filter((m) => MATIERES.includes(m))
+        ? (corps.matieres as string[]).filter((m) => connu.matieres.includes(m))
         : undefined
       const niveaux = Array.isArray(corps.niveaux)
-        ? (corps.niveaux as string[]).filter((n) => NIVEAUX.includes(n))
+        ? (corps.niveaux as string[]).filter((n) => connu.niveaux.includes(n))
         : undefined
 
       const aEcrire: Record<string, unknown> = {
