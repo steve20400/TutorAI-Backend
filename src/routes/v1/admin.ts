@@ -1341,6 +1341,150 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       }
     },
   )
+
+  // ── Le programme officiel ─────────────────────────────────────────────────
+
+  app.get(
+    "/programmes",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Les programmes, et ce qui reste à saisir",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc(
+        "avancement_des_programmes",
+      )
+      if (error) return echec(requete, reponse, error, "programmes")
+      return { donnees: data ?? [] }
+    },
+  )
+
+  app.get(
+    "/programmes/:id",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Les leçons d'un programme, avec leur détail",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+
+      const { data, error } = await supabasePour(requete)
+        .from("programmes")
+        .select("id, pays, niveau, matiere, publie, contenu")
+        .eq("id", id)
+        .maybeSingle()
+
+      if (error) return echec(requete, reponse, error, "programme")
+      if (!data) {
+        return reponse.code(404).send({
+          erreur: "programme_introuvable",
+          message: "Ce programme n'existe pas.",
+        })
+      }
+
+      // On aplatit l'arbre pour l'écran : compétence → thème → leçon. Le
+      // chemin reste visible, parce qu'une leçon isolée de son thème ne veut
+      // plus dire grand-chose.
+      type Lecon = Record<string, unknown>
+      const lecons: Array<Record<string, unknown>> = []
+
+      const contenu = data.contenu as {
+        competences?: Array<{
+          intitule?: string
+          themes?: Array<{ intitule?: string; lecons?: Lecon[] }>
+        }>
+      }
+
+      for (const c of contenu.competences ?? []) {
+        for (const t of c.themes ?? []) {
+          for (const l of t.lecons ?? []) {
+            lecons.push({
+              ...l,
+              competence: c.intitule ?? null,
+              theme: t.intitule ?? null,
+              renseignee:
+                Object.keys(l).filter((k) => k !== "id" && k !== "titre")
+                  .length > 0,
+            })
+          }
+        }
+      }
+
+      const { contenu: _, ...entete } = data
+      return { programme: entete, lecons }
+    },
+  )
+
+  app.post(
+    "/programmes/:id/lecons/:leconId",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Saisir le détail d'une leçon",
+        description:
+          "Fusionne : ce qui n'est pas envoyé reste. On ne perd pas le titre " +
+          "en enregistrant des prérequis.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id", "leconId"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            leconId: { type: "string", maxLength: 40 },
+          },
+        },
+        body: {
+          type: "object",
+          properties: {
+            prerequis: { type: "array", items: { type: "string", maxLength: 400 }, maxItems: 30 },
+            savoirs: { type: "array", items: { type: "string", maxLength: 400 }, maxItems: 40 },
+            savoir_faire: { type: "array", items: { type: "string", maxLength: 400 }, maxItems: 40 },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id, leconId } = requete.params as { id: string; leconId: string }
+      const detail = requete.body as Record<string, string[]>
+      const supabase = supabasePour(requete)
+
+      const { error } = await supabase.rpc("modifier_lecon", {
+        programme: id,
+        lecon_id: leconId,
+        detail,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "saisie de lecon refusee")
+        return reponse.code(400).send({
+          erreur: "saisie_refusee",
+          message: error.message,
+        })
+      }
+
+      await journaliser(
+        supabase,
+        utilisateurDe(requete),
+        "programme_saisi",
+        "programme",
+        id,
+      )
+
+      return { ok: true }
+    },
+  )
 }
 
 /**
