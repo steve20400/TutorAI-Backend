@@ -88,7 +88,9 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     async (requete, reponse) => {
       const supabase = supabasePour(requete)
 
-      const [attente, verifies, familles, enCours, villes, cles] =
+      const [attente, verifies, familles, enCours, villes, cles,
+          alertes,
+        ] =
         await Promise.all([
           supabase
             .from("repetiteurs")
@@ -113,6 +115,13 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
             .from("cles_api")
             .select("nom, valeur")
             .in("nom", ["carte_style", "carte_cle"]),
+          // Une alerte doit se voir sans qu'on aille la chercher. Dans le même
+          // aller-retour : le service peut dormir cinquante secondes, et un
+          // second appel pour un seul nombre doublerait cette attente.
+          supabase
+            .from("signalements")
+            .select("id", { count: "exact", head: true })
+            .eq("statut", "nouveau"),
         ])
 
       if (verifies.error) return echec(requete, reponse, verifies.error, "tableau de bord")
@@ -140,6 +149,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         aVerifier: attente.count ?? 0,
         familles: familles.count ?? 0,
         seancesEnCours: enCours.count ?? 0,
+        alertes: alertes.count ?? 0,
         villes: villes.data ?? [],
         comptes,
         styleCarte,
@@ -1482,6 +1492,128 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         id,
       )
 
+      return { ok: true }
+    },
+  )
+
+  // ── Les signalements ──────────────────────────────────────────────────────
+  //
+  // Ils s'écrivaient depuis le premier jour — un parent qui alerte sur une
+  // séance, la plateforme qui alerte au dixième rattachement refusé — et
+  // personne ne pouvait les lire. Une alarme que personne n'entend est pire
+  // que pas d'alarme : elle donne l'illusion d'une surveillance.
+
+  app.get(
+    "/signalements",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Les signalements, les plus récents d'abord",
+        security: securite,
+        querystring: {
+          type: "object",
+          properties: {
+            statut: { type: "string", enum: ["nouveau", "traite", "tous"] },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { statut = "nouveau" } = requete.query as { statut?: string }
+      const supabase = supabasePour(requete)
+
+      let requeteSql = supabase
+        .from("signalements")
+        .select("id, auteur_id, cible_id, seance_id, motif, statut, decision, traite_le, cree_le")
+        .order("cree_le", { ascending: false })
+        .limit(200)
+
+      if (statut !== "tous") requeteSql = requeteSql.eq("statut", statut)
+
+      const { data, error } = await requeteSql
+      if (error) return echec(requete, reponse, error, "signalements")
+
+      // Les noms en une seule requête. L'auteur peut être absent — la
+      // plateforme signale aussi d'elle-même, et ces alertes-là n'ont pas
+      // d'auteur humain.
+      const ids = [
+        ...new Set(
+          (data ?? []).flatMap((s) =>
+            [s.auteur_id, s.cible_id].filter(Boolean) as string[],
+          ),
+        ),
+      ]
+
+      const { data: gens } = ids.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant, role")
+            .in("id", ids)
+        : { data: [] as Array<{ id: string }> }
+
+      const parId = new Map((gens ?? []).map((g) => [g.id as string, g]))
+
+      return {
+        donnees: (data ?? []).map((s) => ({
+          ...s,
+          auteur: s.auteur_id ? (parId.get(s.auteur_id as string) ?? null) : null,
+          cible: s.cible_id ? (parId.get(s.cible_id as string) ?? null) : null,
+        })),
+      }
+    },
+  )
+
+  app.post(
+    "/signalements/:id/traiter",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Classer un signalement, avec sa raison",
+        description:
+          "La décision est obligatoire. Un signalement classé sans un mot ne " +
+          "dit rien à celui qui le relira dans six mois.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["decision"],
+          properties: {
+            decision: { type: "string", minLength: 3, maxLength: 2000 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const { decision } = requete.body as { decision: string }
+      const supabase = supabasePour(requete)
+      const moi = utilisateurDe(requete)
+
+      const { data, error } = await supabase
+        .from("signalements")
+        .update({
+          statut: "traite",
+          decision,
+          traite_par: moi,
+          traite_le: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select("id")
+
+      // Une écriture qui ne touche aucune ligne n'est pas une réussite.
+      if (error || !data?.length) {
+        requete.log.warn({ error }, "signalement non traite")
+        return reponse.code(403).send({
+          erreur: "traitement_refuse",
+          message: error?.message ?? "Ce signalement n'a pas pu être classé.",
+        })
+      }
+
+      await journaliser(supabase, moi, "signalement_traite", "signalement", id)
       return { ok: true }
     },
   )
