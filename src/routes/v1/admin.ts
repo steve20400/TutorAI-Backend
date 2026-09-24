@@ -1513,7 +1513,10 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         querystring: {
           type: "object",
           properties: {
-            statut: { type: "string", enum: ["nouveau", "traite", "tous"] },
+            statut: {
+              type: "string",
+              enum: ["nouveau", "lu", "traite", "tous"],
+            },
           },
         },
       },
@@ -1524,7 +1527,9 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
 
       let requeteSql = supabase
         .from("signalements")
-        .select("id, auteur_id, cible_id, seance_id, motif, statut, decision, traite_le, cree_le")
+        .select(
+          "id, auteur_id, cible_id, seance_id, motif, statut, decision, lu_le, traite_le, cree_le",
+        )
         .order("cree_le", { ascending: false })
         .limit(200)
 
@@ -1560,6 +1565,48 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           cible: s.cible_id ? (parId.get(s.cible_id as string) ?? null) : null,
         })),
       }
+    },
+  )
+
+  app.post(
+    "/signalements/:id/lu",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Marquer une alerte comme lue",
+        description:
+          "Un clic, sans rien écrire. Lire n'est pas décider : exiger un " +
+          "paragraphe pour dire « rien à signaler » ferait qu'on ne les lit " +
+          "plus du tout.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+      const moi = utilisateurDe(requete)
+
+      const { data, error } = await supabase
+        .from("signalements")
+        .update({ statut: "lu", lu_par: moi, lu_le: new Date().toISOString() })
+        .eq("id", id)
+        .eq("statut", "nouveau")
+        .select("id")
+
+      if (error || !data?.length) {
+        return reponse.code(403).send({
+          erreur: "lecture_refusee",
+          message: error?.message ?? "Cette alerte n'a pas pu être marquée.",
+        })
+      }
+
+      await journaliser(supabase, moi, "signalement_lu", "signalement", id)
+      return { ok: true }
     },
   )
 
@@ -1600,6 +1647,11 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           decision,
           traite_par: moi,
           traite_le: new Date().toISOString(),
+          // Classer vaut lecture : sans cela une alerte traitée d'emblée
+          // n'aurait jamais de date de lecture, et l'on ne saurait pas quand
+          // l'administration a su.
+          lu_par: moi,
+          lu_le: new Date().toISOString(),
         })
         .eq("id", id)
         .select("id")
