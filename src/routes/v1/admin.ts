@@ -1002,11 +1002,18 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const cleExigee = valeur === true ? await cleRequisePour(supabase, cle) : null
 
       if (cleExigee) {
-        const { data: posee } = await supabase
-          .from("cles_api")
-          .select("nom, apercu")
-          .eq("nom", cleExigee)
-          .maybeSingle()
+        // Par `lister_cles`, jamais par un select direct : la RLS interdit la
+        // lecture de `cles_api` même à l'administration, et un select y
+        // renvoie zéro ligne sans erreur. Le code lisait ce zéro comme
+        // « aucune clé posée » — et le module ne pouvait donc s'allumer pour
+        // AUCUN fournisseur, jamais, même la clé enregistrée.
+        //
+        // C'est la troisième fois aujourd'hui qu'une lecture vide est prise
+        // pour une réponse. Une requête qui ne trouve rien ne dit pas que
+        // rien n'existe : elle dit qu'on n'a pas le droit de le voir.
+        const { data: toutes } = await supabase.rpc("lister_cles")
+        const posee = ((toutes ?? []) as Array<{ nom: string; apercu: string | null }>)
+          .find((c) => c.nom === cleExigee)
 
         if (!posee?.apercu) {
           await journaliser(
