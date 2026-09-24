@@ -27,7 +27,11 @@ export type ContexteSeance = {
   pays: string
   matiere: string
   mode: "texte" | "audio"
-  programme: Programme
+  /**
+   * Nul quand l'élève a nommé sa matière lui-même : aucun programme officiel
+   * n'est chargé pour elle.
+   */
+  programme: Programme | null
   memoire: MemoireEleve | null
   leconTitre: string | null
   historique: Array<{ auteur: string; contenu: string }>
@@ -84,7 +88,9 @@ export function demandePourLeTuteur(
   const dernierProposEleve =
     [...c.historique].reverse().find((m) => m.auteur === "eleve")?.contenu ?? ""
 
-  const lecon = trouverLecon(c.programme, c.leconTitre ?? dernierProposEleve)
+  const lecon = c.programme
+    ? trouverLecon(c.programme, c.leconTitre ?? dernierProposEleve)
+    : null
 
   const messages: Message[] = c.historique.map((m) => ({
     role: m.auteur === "eleve" ? "utilisateur" : "tuteur",
@@ -93,7 +99,16 @@ export function demandePourLeTuteur(
 
   return {
     systeme: regles(c),
-    stable: `PROGRAMME OFFICIEL — ${c.niveau}, ${c.matiere}\n\n${tableDesMatieres(c.programme)}`,
+    // Sans programme, on le DIT au modèle plutôt que de le laisser inventer
+    // une progression. Un tuteur qui prétend suivre un programme qu'il n'a
+    // pas est pire qu'un tuteur qui avoue ne pas l'avoir : l'élève le croit.
+    stable: c.programme
+      ? `PROGRAMME OFFICIEL — ${c.niveau}, ${c.matiere}\n\n${tableDesMatieres(c.programme)}`
+      : `AUCUN PROGRAMME OFFICIEL n'est chargé pour ${c.matiere} en ${c.niveau}.\n\n` +
+        `Tu travailles donc sans table des matières. Dis-le simplement à l'élève ` +
+        `dès ta première réponse — une phrase suffit — puis demande-lui ce que ` +
+        `sa classe a fait récemment, et pars de là. N'invente jamais une ` +
+        `progression officielle que tu n'as pas : il te croirait.`,
     volatil: volatil(c, lecon),
     messages,
     modele,

@@ -64,13 +64,28 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
         security: securite,
         body: {
           type: "object",
-          required: ["programmeIds"],
           properties: {
             programmeIds: {
               type: "array",
               items: { type: "string", format: "uuid" },
-              minItems: 1,
               maxItems: 12,
+            },
+            /**
+             * Les matières que l'élève a nommées lui-même, faute de programme
+             * officiel chargé pour elles. Le niveau vient avec, puisque aucun
+             * programme ne le porte.
+             */
+            libres: {
+              type: "array",
+              maxItems: 12,
+              items: {
+                type: "object",
+                required: ["matiere", "niveau"],
+                properties: {
+                  matiere: { type: "string", minLength: 2, maxLength: 60 },
+                  niveau: { type: "string", minLength: 1, maxLength: 40 },
+                },
+              },
             },
             manuels: {
               type: "array",
@@ -85,37 +100,77 @@ export async function routesTuteurs(app: FastifyInstance): Promise<void> {
       },
     },
     async (requete, reponse) => {
-      const { programmeIds, manuels = [] } = requete.body as {
-        programmeIds: string[]
+      const { programmeIds = [], libres = [], manuels = [] } = requete.body as {
+        programmeIds?: string[]
+        libres?: { matiere: string; niveau: string }[]
         manuels?: { titre: string }[]
       }
       const moi = utilisateurDe(requete)
       const supabase = supabasePour(requete)
 
-      const { data: programmes } = await supabase
-        .from("programmes")
-        .select("id, niveau, matiere")
-        .in("id", programmeIds)
-        .eq("publie", true)
+      if (programmeIds.length === 0 && libres.length === 0) {
+        return reponse.code(400).send({
+          erreur: "aucune_matiere",
+          message: "Choisis au moins une matière.",
+        })
+      }
 
-      if (!programmes?.length) {
+      // Les programmes sont relus ici : le client a pu envoyer n'importe quel
+      // identifiant, et seuls les programmes publiés comptent.
+      const { data: programmes } = programmeIds.length
+        ? await supabase
+            .from("programmes")
+            .select("id, niveau, matiere")
+            .in("id", programmeIds)
+            .eq("publie", true)
+        : { data: [] as Array<{ id: string; niveau: string; matiere: string }> }
+
+      if (programmeIds.length > 0 && !programmes?.length) {
         return reponse.code(400).send({
           erreur: "programme_introuvable",
           message: "Aucun de ces programmes n'existe.",
         })
       }
 
+      // Une matière écrite par un élève entre au catalogue, pour être
+      // proposée au suivant. C'est la demande qui dira à l'administration
+      // quels programmes charger ensuite — plutôt qu'une intuition.
+      const propres = libres
+        .map((l) => ({ matiere: net(l.matiere), niveau: net(l.niveau) }))
+        .filter((l) => l.matiere.length >= 2 && l.niveau.length >= 1)
+
+      if (propres.length) {
+        await supabase.from("matieres").upsert(
+          propres.map((l) => ({
+            nom: l.matiere,
+            ordre: 500,
+            active: true,
+            proposee_par_un_eleve: true,
+          })),
+          { onConflict: "nom", ignoreDuplicates: true },
+        )
+      }
+
+      const aCreer = [
+        ...(programmes ?? []).map((p) => ({
+          eleve_id: moi,
+          programme_id: p.id,
+          matiere: p.matiere,
+          niveau: p.niveau,
+          manuels,
+        })),
+        ...propres.map((l) => ({
+          eleve_id: moi,
+          programme_id: null,
+          matiere: l.matiere,
+          niveau: l.niveau,
+          manuels,
+        })),
+      ]
+
       const { data: crees, error } = await supabase
         .from("tuteurs_ia")
-        .insert(
-          programmes.map((p) => ({
-            eleve_id: moi,
-            programme_id: p.id,
-            matiere: p.matiere,
-            niveau: p.niveau,
-            manuels,
-          })),
-        )
+        .insert(aCreer)
         .select("id, matiere, niveau")
 
       if (error || !crees) {
@@ -229,4 +284,16 @@ export async function routesProgrammes(app: FastifyInstance): Promise<void> {
       return { donnees: data ?? [] }
     },
   )
+}
+
+/**
+ * Nettoie ce qu'un élève a tapé.
+ *
+ * Espaces en trop, casse d'affichage. Sans cela « anglais », « Anglais  » et
+ * « ANGLAIS » deviendraient trois matières distinctes dans le catalogue, et
+ * l'élève suivant se verrait proposer les trois.
+ */
+function net(valeur: string): string {
+  const propre = valeur.trim().replace(/\s+/g, " ")
+  return propre.charAt(0).toUpperCase() + propre.slice(1)
 }

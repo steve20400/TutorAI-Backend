@@ -102,13 +102,18 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
 
       // ── La séance ───────────────────────────────────────────────────────
       // La RLS filtre : une séance qui n'est pas la sienne ne remonte pas.
+      //
+      // `programmes` sans `!inner`, contrairement à `tuteurs_ia` : un tuteur
+      // dont l'élève a nommé la matière lui-même n'a pas de programme, et une
+      // jointure obligatoire l'aurait fait disparaître — la séance aurait
+      // répondu « introuvable » sans que personne comprenne pourquoi.
       const { data: seance } = await supabase
         .from("seances")
         .select(
           `id, statut, mode, lecon_titre,
            tuteur:tuteurs_ia!inner (
              id, matiere, niveau,
-             programme:programmes!inner ( contenu ),
+             programme:programmes ( contenu ),
              memoire:memoire_eleve ( notions_acquises, notions_fragiles, erreurs_recurrentes )
            )`,
         )
@@ -160,7 +165,7 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
       ])
 
       const t = premier(seance.tuteur)
-      const programme = premier(t.programme)
+      const programme = t.programme ? premier(t.programme) : null
       const memoire = premier(t.memoire)
 
       const contexte: ContexteSeance = {
@@ -169,7 +174,7 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
         pays: profil?.pays ?? "CM",
         matiere: t.matiere,
         mode: seance.mode,
-        programme: programme.contenu,
+        programme: programme?.contenu ?? null,
         memoire: memoire ?? null,
         leconTitre: seance.lecon_titre,
         historique: [...(historique ?? []), { auteur: "eleve", contenu }],
