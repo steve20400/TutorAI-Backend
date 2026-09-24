@@ -88,21 +88,63 @@ export function trouverLecon(programme: Programme, propos: string): Lecon | null
     .split(" ")
     .filter((m) => m.length > 3)
 
+  if (mots.length === 0) return null
+
   let meilleure: Lecon | null = null
   let meilleurScore = 0
+  let meilleurMot = ""
 
   for (const lecon of lecons) {
-    const titre = normaliser(lecon.titre)
-    const score = mots.filter((m) => titre.includes(m)).length
-    if (score > meilleurScore) {
-      meilleurScore = score
+    const motsDuTitre = normaliser(lecon.titre)
+      .split(" ")
+      .filter((m) => m.length > 3)
+
+    const trouves = mots.filter((m) => motsDuTitre.some((t) => memeMot(m, t)))
+
+    if (trouves.length > meilleurScore) {
+      meilleurScore = trouves.length
       meilleure = lecon
+      meilleurMot = trouves.reduce((a, b) => (b.length > a.length ? b : a), "")
     }
   }
 
-  // Sous deux mots-clés communs, la correspondance n'est pas fiable :
-  // mieux vaut laisser le tuteur demander une précision à l'élève.
-  return meilleurScore >= 2 ? meilleure : null
+  if (!meilleure) return null
+
+  // Deux mots communs suffisent : c'est le cas courant, « les limites et la
+  // continuité ».
+  if (meilleurScore >= 2) return meilleure
+
+  // Un seul mot peut suffire, mais à deux conditions.
+  //
+  // « limites » ne désigne qu'une leçon et c'est tout ce que l'élève a dit :
+  // exiger deux mots le renvoyait vers un tuteur sans leçon, alors qu'il
+  // avait parfaitement répondu à la question posée. C'était le cas le plus
+  // courant, et il échouait.
+  //
+  // « les équations du second degré » contient lui aussi un mot qui touche —
+  // « équations » — mais deux autres qui ne touchent rien. C'est le signe que
+  // l'élève parle d'autre chose : les équations différentielles ne sont pas
+  // les équations du second degré. On refuse, et le tuteur demande.
+  //
+  // D'où la part : le mot trouvé doit représenter l'essentiel de ce que
+  // l'élève a dit, pas un fragment noyé dans le reste.
+  const part = meilleurScore / mots.length
+  return meilleurMot.length >= 6 && part >= 0.6 ? meilleure : null
+}
+
+/**
+ * Deux mots désignent-ils la même chose.
+ *
+ * Égaux, ou l'un commence par l'autre sur au moins cinq lettres. Sans cette
+ * tolérance, « limite » ne reconnaissait pas « limites », ni « intégrale »
+ * « intégral » — et un élève ne met pas ses mots au singulier pour faire
+ * plaisir à une comparaison de chaînes.
+ */
+function memeMot(a: string, b: string): boolean {
+  if (a === b) return true
+  const court = Math.min(a.length, b.length)
+  if (court < 5) return false
+  return a.startsWith(b.slice(0, 5)) || b.startsWith(a.slice(0, 5))
 }
 
 /** Détail d'une leçon, mis en forme pour le contexte du modèle. */

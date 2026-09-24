@@ -91,3 +91,26 @@ test("le squelette camerounais ne fait pas passer un faux programme", () => {
   assert.equal(trouverLecon(CM, "les nombres complexes"), null)
   assert.equal(trouverLecon(CM, "les limites et la continuité"), null)
 })
+
+test("trouverLecon accepte un seul mot decisif", () => {
+  // Le cas le plus courant, et il echouait : l'eleve repond « les limites »
+  // a la question « qu'est-ce que vous avez fait aujourd'hui ? ». La regle
+  // exigeait deux mots communs, le renvoyant vers un tuteur sans lecon.
+  for (const propos of ["limites", "les limites", "Limites", "primitives"]) {
+    const lecon = trouverLecon(CI, propos)
+    assert.ok(lecon, `aucune lecon pour « ${propos} »`)
+  }
+})
+
+test("trouverLecon tolere le singulier et le pluriel", () => {
+  // Un eleve ne met pas ses mots au singulier pour faire plaisir a une
+  // comparaison de chaines.
+  assert.match(trouverLecon(CI, "la limite d'une fonction")?.titre ?? "", /Limites/)
+  assert.match(trouverLecon(CI, "le calcul integral")?.titre ?? "", /intégral/)
+})
+
+test("trouverLecon refuse un mot noye dans autre chose", () => {
+  // « equations » touche « Equations differentielles », mais « second » et
+  // « degre » ne touchent rien : l'eleve parle d'autre chose.
+  assert.equal(trouverLecon(CI, "les équations du second degré"), null)
+})
