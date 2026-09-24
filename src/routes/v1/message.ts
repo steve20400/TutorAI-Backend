@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify"
 
 import { configurationDuTuteur, ErreurConfiguration } from "../../ia/configuration.js"
 import { ErreurIA, parler } from "../../ia/index.js"
-import { demandePourLeTuteur, REFUS, type ContexteSeance } from "../../tuteur/contexte.js"
+import { demandePourLeTuteur, type ContexteSeance } from "../../tuteur/contexte.js"
 import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
 
 /**
@@ -230,10 +230,21 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
       }
 
       // ── On garde la réponse ─────────────────────────────────────────────
-      const texte = rendu.trim() || REFUS
-      await supabase
-        .from("messages")
-        .insert({ seance_id: id, auteur: "tuteur", contenu: texte })
+      //
+      // Rien à garder quand le modèle n'a rien dit. Écrire `REFUS` dans ce
+      // cas — ce que faisait ce code — inscrivait « je préfère ne pas
+      // répondre à ça » dans le fil de l'enfant alors que la panne était
+      // technique. Il croyait que son tuteur l'avait rembarré, et la phrase
+      // restait dans son historique pour toujours.
+      //
+      // Une panne se dit comme une panne. Le refus est une décision
+      // pédagogique, et le modèle est seul à pouvoir la prendre.
+      const texte = rendu.trim()
+      if (texte) {
+        await supabase
+          .from("messages")
+          .insert({ seance_id: id, auteur: "tuteur", contenu: texte })
+      }
 
       reponse.raw.end()
     },

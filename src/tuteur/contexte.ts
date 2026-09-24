@@ -101,6 +101,12 @@ export function demandePourLeTuteur(
   }
 }
 
-/** Ce que le tuteur répond quand il préfère ne pas répondre. */
+/**
+ * Ce que le tuteur répond quand il préfère ne pas répondre.
+ *
+ * Réservé à un refus décidé par le modèle. Une panne technique ne doit JAMAIS
+ * emprunter cette phrase : l'enfant croirait que son tuteur l'a rembarré, et
+ * la phrase resterait dans son historique pour toujours.
+ */
 export const REFUS =
   "Je préfère ne pas répondre à ça. Revenons à ton programme : sur quelle leçon veux-tu travailler ?"
