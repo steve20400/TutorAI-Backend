@@ -101,6 +101,51 @@ export async function configurationDuTuteur(
   return valeur
 }
 
+/**
+ * Inscrit ce qu'une réponse a coûté.
+ *
+ * Par la connexion du service, et non avec le jeton de l'élève : si le site
+ * écrivait ces lignes en son nom, l'élève pourrait les écrire lui-même — et
+ * minorer sa consommation. Le jour où un abonnement repose là-dessus, ce
+ * serait la porte ouverte.
+ *
+ * Le rôle `service_ia` peut ajouter ici, et rien d'autre : il ne peut ni
+ * relire ce registre, ni le modifier, ni l'effacer.
+ *
+ * Un échec n'interrompt jamais la conversation : mieux vaut une ligne de
+ * comptabilité perdue qu'un élève qui perd sa réponse. Il part au journal.
+ */
+export async function inscrireConsommation(ligne: {
+  compteId: string
+  payePar?: string | null
+  seanceId?: string | null
+  fournisseur: string
+  modele: string
+  entree: number
+  sortie: number
+  approximatif: boolean
+}): Promise<void> {
+  const bassin = connexion()
+  if (!bassin) return
+
+  await bassin.query(
+    `insert into consommation_ia
+       (compte_id, paye_par, seance_id, fournisseur, modele,
+        jetons_entree, jetons_sortie, approximatif)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      ligne.compteId,
+      ligne.payePar ?? ligne.compteId,
+      ligne.seanceId ?? null,
+      ligne.fournisseur,
+      ligne.modele,
+      ligne.entree,
+      ligne.sortie,
+      ligne.approximatif,
+    ],
+  )
+}
+
 /** Après un changement de clé, pour ne pas attendre les trente secondes. */
 export function oublierLaConfiguration(): void {
   memoire = null

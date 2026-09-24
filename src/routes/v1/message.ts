@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify"
 
-import { configurationDuTuteur, ErreurConfiguration } from "../../ia/configuration.js"
+import {
+  configurationDuTuteur,
+  ErreurConfiguration,
+  inscrireConsommation,
+} from "../../ia/configuration.js"
 import { ErreurIA, parler } from "../../ia/index.js"
 import { demandePourLeTuteur, type ContexteSeance } from "../../tuteur/contexte.js"
 import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
@@ -211,6 +215,9 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
       }
 
       let rendu = ""
+      let usage: { entree: number; sortie: number; approximatif: boolean } | null =
+        null
+
       try {
         const flux = parler(
           demandePourLeTuteur(contexte, config.modeleCompte, JETONS_PAR_REPONSE),
@@ -222,6 +229,7 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
             rendu += m.texte
             envoyer(m)
           } else {
+            usage = m.usage
             envoyer(m)
           }
         }
@@ -256,6 +264,26 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
         await supabase
           .from("messages")
           .insert({ seance_id: id, auteur: "tuteur", contenu: texte })
+      }
+
+      // Ce que cette réponse a coûté. Une ligne par appel, jamais agrégée :
+      // on peut toujours additionner des lignes, on ne peut jamais retrouver
+      // le détail d'une somme.
+      if (usage) {
+        try {
+          await inscrireConsommation({
+            compteId: moi,
+            seanceId: id,
+            fournisseur: config.fournisseur,
+            modele: config.modeleCompte,
+            entree: usage.entree,
+            sortie: usage.sortie,
+            approximatif: usage.approximatif,
+          })
+        } catch (e) {
+          // Une ligne de comptabilité perdue vaut mieux qu'une réponse perdue.
+          requete.log.error({ e }, "consommation non inscrite")
+        }
       }
 
       reponse.raw.end()
