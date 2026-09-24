@@ -140,17 +140,42 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
         .eq("eleve_id", moi)
 
       const ids = (liens ?? []).map((l) => l.parent_id as string)
-      if (ids.length === 0) return { donnees: [], jauge: "illimite" }
+      if (ids.length === 0) {
+        // Un enfant venu seul : pas d'adulte, mais une jauge quand même — il
+        // a sa propre dotation, et elle s'épuise.
+        const { data } = await supabase.rpc("jauge_detaillee", { eleve: moi })
+        const seul = (data as Array<{ actif: boolean; etat: string; part: number }> | null)?.[0]
+        return {
+          actif: seul?.actif ?? false,
+          etat: seul?.etat ?? "illimite",
+          part: seul?.part ?? 100,
+          payeur: null,
+          donnees: [],
+        }
+      }
 
       const [{ data: profils }, { data: jauge }] = await Promise.all([
         supabase.from("profils").select("id, prenom, photo_url").in("id", ids),
-        supabase.rpc("jauge_de_l_eleve", { eleve: moi }),
+        supabase.rpc("jauge_detaillee", { eleve: moi }),
       ])
+
+      const mesure = (jauge as Array<{
+        actif: boolean
+        etat: string
+        part: number
+        payeur: string | null
+      }> | null)?.[0]
 
       const parId = new Map((profils ?? []).map((p) => [p.id as string, p]))
 
       return {
-        jauge: (jauge as string) ?? "illimite",
+        // `actif` faux tant que le module de jetons est éteint : l'écran
+        // n'affiche alors aucune jauge. Un anneau plein qui ne bouge jamais
+        // n'est pas une information, c'est du bruit.
+        actif: mesure?.actif ?? false,
+        etat: mesure?.etat ?? "illimite",
+        part: mesure?.part ?? 100,
+        payeur: mesure?.payeur ?? null,
         donnees: (liens ?? [])
           .map((l) => {
             const p = parId.get(l.parent_id as string)
