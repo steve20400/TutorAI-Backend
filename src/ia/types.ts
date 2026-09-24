@@ -68,16 +68,65 @@ export type Fournisseur = {
   flux(demande: Demande, reglages: Reglages): AsyncGenerator<Morceau>
 }
 
+/**
+ * Ce qui a échoué, en quatre familles.
+ *
+ * Le message du fournisseur est en anglais et technique — « This model is
+ * currently experiencing high demand ». Un enfant de cinquième ne doit jamais
+ * lire ça. Le code voyage jusqu'à l'écran, qui choisit une phrase dans la
+ * langue de l'élève ; le message, lui, va au journal.
+ */
+export type CodeErreurIA =
+  /** Le fournisseur est débordé ou nous freine. Réessayer a du sens. */
+  | "surcharge"
+  /** Clé absente, invalide ou sans crédit. L'administration doit agir. */
+  | "cle"
+  /** Le modèle nommé n'existe pas ou plus. L'administration doit agir. */
+  | "modele"
+  /** Tout le reste. */
+  | "autre"
+
 /** Erreur du fournisseur, avec de quoi la montrer sans trahir la clé. */
 export class ErreurIA extends Error {
+  readonly code: CodeErreurIA
+
   constructor(
     readonly fournisseur: string,
     readonly statut: number,
     message: string,
+    code?: CodeErreurIA,
   ) {
     super(message)
     this.name = "ErreurIA"
+    this.code = code ?? deviner(statut, message)
   }
+
+  /** Vrai quand réessayer dans un instant a des chances d'aboutir. */
+  get passagere(): boolean {
+    return this.code === "surcharge"
+  }
+}
+
+/**
+ * Chaque fournisseur nomme ses pannes à sa façon.
+ *
+ * On lit d'abord le code HTTP, qui est la partie fiable, puis le texte pour
+ * les cas que le code ne distingue pas — un 400 peut aussi bien dire « ce
+ * modèle n'existe pas » que « votre requête est malformée ».
+ */
+function deviner(statut: number, message: string): CodeErreurIA {
+  if (statut === 429 || statut === 503 || statut === 529) return "surcharge"
+  if (statut === 401 || statut === 403) return "cle"
+
+  const m = message.toLowerCase()
+  if (m.includes("overload") || m.includes("high demand") || m.includes("rate limit")) {
+    return "surcharge"
+  }
+  if (m.includes("api key") || m.includes("api_key") || m.includes("quota")) return "cle"
+  if (m.includes("model") && (m.includes("not found") || m.includes("no longer") || m.includes("unknown"))) {
+    return "modele"
+  }
+  return "autre"
 }
 
 /**

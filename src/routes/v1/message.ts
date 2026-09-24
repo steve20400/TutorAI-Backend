@@ -226,12 +226,19 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
           }
         }
       } catch (e) {
+        // Le message du fournisseur part au journal, pas à l'écran : il est
+        // en anglais et technique — « This model is currently experiencing
+        // high demand ». Un enfant de cinquième ne doit jamais lire ça.
+        // L'écran reçoit un code, et choisit sa phrase dans la langue de
+        // l'élève.
+        const code = e instanceof ErreurIA ? e.code : "autre"
         const message =
           e instanceof ErreurIA || e instanceof ErreurConfiguration
             ? e.message
-            : "le tuteur est momentanément indisponible"
-        requete.log.error({ e }, "appel du tuteur echoue")
-        envoyer({ type: "erreur", message })
+            : String(e)
+
+        requete.log.error({ e, code }, "appel du tuteur echoue")
+        envoyer({ type: "erreur", code, message })
       }
 
       // ── On garde la réponse ─────────────────────────────────────────────
