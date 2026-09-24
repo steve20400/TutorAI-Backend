@@ -15,6 +15,7 @@ import { routesContrats } from "./routes/v1/contrats.js"
 import { routesConversation } from "./routes/v1/conversation.js"
 import { routesMessage } from "./routes/v1/message.js"
 import { routesInscription } from "./routes/v1/inscription.js"
+import { routesLiens } from "./routes/v1/liens.js"
 import { routesEnfants } from "./routes/v1/enfants.js"
 import { routesRepetiteur } from "./routes/v1/repetiteur.js"
 import { routesRepetiteurs } from "./routes/v1/repetiteurs.js"
@@ -75,6 +76,7 @@ export async function construireServeur() {
       await v1.register(routesMoi)
       await v1.register(routesRepetiteurs)
       await v1.register(routesEnfants)
+      await v1.register(routesLiens)
       await v1.register(routesContrats)
       await v1.register(routesSeances)
       await v1.register(routesSignalements)
