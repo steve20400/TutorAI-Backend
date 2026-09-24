@@ -146,6 +146,28 @@ export async function inscrireConsommation(ligne: {
   )
 }
 
+/**
+ * Retire des jetons de la réserve du payeur.
+ *
+ * Par la connexion du service, comme le registre de consommation : si le site
+ * débitait avec le jeton de l'élève, l'élève pourrait ne pas se débiter.
+ *
+ * Rend le solde restant.
+ */
+export async function debiterJetons(
+  payeur: string,
+  combien: number,
+): Promise<number> {
+  const bassin = connexion()
+  if (!bassin) return 0
+
+  const { rows } = await bassin.query<{ debiter_jetons: string }>(
+    "select debiter_jetons($1, $2)",
+    [payeur, Math.max(0, Math.round(combien))],
+  )
+  return Number(rows[0]?.debiter_jetons ?? 0)
+}
+
 /** Après un changement de clé, pour ne pas attendre les trente secondes. */
 export function oublierLaConfiguration(): void {
   memoire = null

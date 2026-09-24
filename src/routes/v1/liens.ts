@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
-import { exigerSession, supabasePour } from "../../supabase.js"
+import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
 
 /**
  * Le rattachement d'un adulte à un enfant.
@@ -109,6 +109,137 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
         requete.log.warn({ error }, "reponse au rattachement refusee")
         return reponse.code(403).send({
           erreur: "reponse_refusee",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
+  app.get(
+    "/liens/mes-parents",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Les adultes rattachés à moi, vus par l'enfant",
+        description:
+          "Un prénom, une photo, et qui porte les séances. Ni adresse ni " +
+          "téléphone : cet écran ne doit pas devenir un moyen d'apprendre " +
+          "comment joindre un adulte hors de la plateforme.",
+        security: securite,
+      },
+    },
+    async (requete) => {
+      const moi = utilisateurDe(requete)
+      const supabase = supabasePour(requete)
+
+      const { data: liens } = await supabase
+        .from("liens_familiaux")
+        .select("parent_id, porte, fournit, actif_le")
+        .eq("eleve_id", moi)
+
+      const ids = (liens ?? []).map((l) => l.parent_id as string)
+      if (ids.length === 0) return { donnees: [], jauge: "illimite" }
+
+      const [{ data: profils }, { data: jauge }] = await Promise.all([
+        supabase.from("profils").select("id, prenom, photo_url").in("id", ids),
+        supabase.rpc("jauge_de_l_eleve", { eleve: moi }),
+      ])
+
+      const parId = new Map((profils ?? []).map((p) => [p.id as string, p]))
+
+      return {
+        jauge: (jauge as string) ?? "illimite",
+        donnees: (liens ?? [])
+          .map((l) => {
+            const p = parId.get(l.parent_id as string)
+            if (!p) return null
+            return {
+              id: p.id,
+              prenom: p.prenom,
+              photo_url: p.photo_url,
+              porte: l.porte as boolean,
+              fournit: l.fournit as boolean,
+              provisoire: new Date(l.actif_le as string) > new Date(),
+            }
+          })
+          .filter(Boolean),
+      }
+    },
+  )
+
+  app.post(
+    "/liens/:parentId/porter",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Choisir quel adulte porte mes séances",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["parentId"],
+          properties: { parentId: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { parentId } = requete.params as { parentId: string }
+
+      // Par la fonction, et non par un UPDATE : ouvrir la table en
+      // modification aurait demandé des droits par colonne, et les droits par
+      // colonne valent pour un rôle entier. L'enfant aurait pu décider qui
+      // fournit, et l'adulte qui porte.
+      const { error } = await supabasePour(requete).rpc("choisir_porteur", {
+        parent: parentId,
+      })
+
+      if (error) {
+        return reponse.code(403).send({
+          erreur: "choix_refuse",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
+  app.post(
+    "/liens/:eleveId/fournir",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Décider si l'on fournit les jetons de cet enfant",
+        description:
+          "Parents séparés, oncle rattaché par courtoisie : sans cet " +
+          "interrupteur, on importerait des conflits de famille dans " +
+          "l'application.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["eleveId"],
+          properties: { eleveId: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["oui"],
+          properties: { oui: { type: "boolean" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { eleveId } = requete.params as { eleveId: string }
+      const { oui } = requete.body as { oui: boolean }
+
+      const { error } = await supabasePour(requete).rpc("fournir_les_jetons", {
+        eleve: eleveId,
+        oui,
+      })
+
+      if (error) {
+        return reponse.code(403).send({
+          erreur: "refus",
           message: error.message,
         })
       }

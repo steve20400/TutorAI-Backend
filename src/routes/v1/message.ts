@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify"
 
 import {
   configurationDuTuteur,
+  debiterJetons,
   ErreurConfiguration,
   inscrireConsommation,
 } from "../../ia/configuration.js"
@@ -158,6 +159,24 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
         })
       }
 
+      // ── Les jetons ──────────────────────────────────────────────────────
+      //
+      // La jauge répond « illimité » tant que le module de jetons est éteint,
+      // ce qui est le cas aujourd'hui : rien ne change pour personne. Quand
+      // il s'allumera, elle dira « épuisé » avant l'appel, et non après.
+      const { data: jauge } = await supabase.rpc("jauge_de_l_eleve", {
+        eleve: moi,
+      })
+
+      if (jauge === "epuise") {
+        return reponse.code(402).send({
+          erreur: "jetons_epuises",
+          message: "Il n'y a plus de jetons pour cette séance.",
+        })
+      }
+
+      const { data: payeur } = await supabase.rpc("payeur_pour", { eleve: moi })
+
       // ── Le contexte ─────────────────────────────────────────────────────
       const [{ data: profil }, { data: historique }] = await Promise.all([
         supabase.from("profils").select("prenom, pays").eq("id", moi).maybeSingle(),
@@ -271,8 +290,16 @@ export async function routesMessage(app: FastifyInstance): Promise<void> {
       // le détail d'une somme.
       if (usage) {
         try {
+          // On débite d'abord, on inscrit ensuite : si le service tombe entre
+          // les deux, mieux vaut une consommation débitée sans trace qu'une
+          // trace sans débit. La première se retrouve dans le solde, la
+          // seconde ne se retrouve nulle part.
+          const total = usage.entree + usage.sortie
+          if (payeur) await debiterJetons(payeur as string, total)
+
           await inscrireConsommation({
             compteId: moi,
+            payePar: (payeur as string | null) ?? null,
             seanceId: id,
             fournisseur: config.fournisseur,
             modele: config.modeleCompte,
