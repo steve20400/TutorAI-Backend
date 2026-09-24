@@ -81,3 +81,45 @@ export async function routesInscription(app: FastifyInstance): Promise<void> {
     },
   )
 }
+
+/**
+ * L'enfant demande un nouveau mot de passe.
+ *
+ * Sans session — c'est tout le propos, il l'a perdu. Il donne son nom de
+ * connexion, pas une adresse : il n'en a pas.
+ *
+ * La réponse est toujours la même. Dire « ce compte n'existe pas » ou « cet
+ * enfant n'a aucun adulte rattaché » ferait de ce champ un annuaire des
+ * enfants inscrits, et pire : il dirait lesquels sont seuls.
+ */
+export async function routesRecuperationEnfant(
+  app: FastifyInstance,
+): Promise<void> {
+  app.post(
+    "/recuperation/enfant",
+    {
+      schema: {
+        tags: ["inscription"],
+        summary: "Demander un nouveau mot de passe pour un compte d'enfant",
+        body: {
+          type: "object",
+          required: ["nom"],
+          properties: { nom: { type: "string", minLength: 2, maxLength: 80 } },
+        },
+      },
+    },
+    async (requete) => {
+      const { nom } = requete.body as { nom: string }
+
+      const { error } = await supabasePour(requete).rpc(
+        "demander_nouveau_mot_de_passe",
+        { nom_enfant: nom },
+      )
+
+      if (error) requete.log.warn({ error }, "demande de mot de passe refusee")
+
+      // Toujours la même réponse, erreur comprise.
+      return { ok: true }
+    },
+  )
+}

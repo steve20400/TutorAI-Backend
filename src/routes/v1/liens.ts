@@ -272,4 +272,101 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
       return { ok: true }
     },
   )
+
+  app.get(
+    "/liens/mots-de-passe",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Les enfants qui ont demandé un nouveau mot de passe",
+        security: securite,
+      },
+    },
+    async (requete) => {
+      const { data } = await supabasePour(requete).rpc(
+        "demandes_de_mot_de_passe",
+      )
+      return { donnees: data ?? [] }
+    },
+  )
+
+  app.post(
+    "/liens/mots-de-passe/:id",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Poser le nouveau mot de passe d'un enfant",
+        description:
+          "La demande vaut dix minutes et ne sert qu'une fois. Le courriel " +
+          "parti chez les autres adultes ne vaut plus rien dès qu'elle est " +
+          "utilisée : la première réponse clôt la question, des deux côtés.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["motDePasse"],
+          properties: {
+            motDePasse: { type: "string", minLength: 6, maxLength: 200 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const { motDePasse } = requete.body as { motDePasse: string }
+
+      const { error } = await supabasePour(requete).rpc(
+        "poser_mot_de_passe_enfant",
+        { demande: id, nouveau: motDePasse },
+      )
+
+      if (error) {
+        const perimee = error.code === "53400"
+        return reponse.code(perimee ? 410 : 403).send({
+          erreur: perimee ? "demande_perimee" : "refus",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
+  app.post(
+    "/liens/mots-de-passe/:eleveId/renvoyer",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Renvoyer une demande de mot de passe",
+        description:
+          "La precedente se ferme a la seconde : deux demandes vivantes, ce " +
+          "serait deux liens valables pour un seul besoin, et le plus ancien " +
+          "traine dans une boite de courriel longtemps apres avoir ete oublie.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["eleveId"],
+          properties: { eleveId: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { eleveId } = requete.params as { eleveId: string }
+
+      const { error } = await supabasePour(requete).rpc(
+        "renvoyer_demande_mot_de_passe",
+        { enfant: eleveId },
+      )
+
+      if (error) {
+        return reponse.code(403).send({ erreur: "refus", message: error.message })
+      }
+
+      return { ok: true }
+    },
+  )
 }

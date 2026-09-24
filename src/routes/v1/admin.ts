@@ -1286,13 +1286,50 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     },
     async (requete, reponse) => {
       const { limite = 60 } = requete.query as { limite?: number }
-      const { data, error } = await supabasePour(requete)
+      const supabase = supabasePour(requete)
+
+      const { data, error } = await supabase
         .from("journal_admin")
         .select("id, admin_id, action, cible_type, cible_id, motif, cree_le")
         .order("cree_le", { ascending: false })
         .limit(limite)
+
       if (error) return echec(requete, reponse, error, "registre")
-      return { donnees: data ?? [] }
+
+      // Les noms, de l'auteur comme de la cible.
+      //
+      // Le registre rendait des identifiants bruts : « verification —
+      // repetiteur a4a47918-bea7-… ». Illisible, donc jamais lu — et un
+      // registre qu'on ne lit pas ne sert à rien, sinon à se rassurer.
+      //
+      // Il ne disait pas non plus QUI avait agi, ce qui est pourtant sa seule
+      // raison d'être.
+      const ids = [
+        ...new Set(
+          (data ?? []).flatMap((l) =>
+            [l.admin_id, l.cible_id].filter(Boolean) as string[],
+          ),
+        ),
+      ]
+
+      const { data: gens } = ids.length
+        ? await supabase
+            .from("profils")
+            .select("id, prenom, nom, identifiant, role")
+            .in("id", ids)
+        : { data: [] as Array<{ id: string }> }
+
+      const parId = new Map((gens ?? []).map((g) => [g.id as string, g]))
+
+      return {
+        donnees: (data ?? []).map((l) => ({
+          ...l,
+          auteur: l.admin_id ? (parId.get(l.admin_id as string) ?? null) : null,
+          // Une cible peut n'être pas une personne — un paramètre, une clé,
+          // un programme. Elle reste alors telle quelle.
+          cible: l.cible_id ? (parId.get(l.cible_id as string) ?? null) : null,
+        })),
+      }
     },
   )
 
