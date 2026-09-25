@@ -117,6 +117,46 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
     },
   )
 
+  app.post(
+    "/liens/enfants/:id/detacher",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "Se détacher d'un enfant",
+        description:
+          "L'adulte se retire, il ne retire pas l'enfant : il n'agit que sur " +
+          "son propre lien, et rien de ce que l'enfant possède n'est touché. " +
+          "Ses séances, son registre et son compte restent à lui. Ce qui part " +
+          "est l'accès de cet adulte à son dossier, sa capacité à lui reposer " +
+          "un mot de passe, et sa place parmi ceux qui peuvent payer ses " +
+          "séances.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+
+      const { error } = await supabasePour(requete).rpc("detacher_enfant", {
+        enfant: id,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "detachement refuse")
+        return reponse.code(403).send({
+          erreur: "detachement_refuse",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
   app.get(
     "/liens/mes-parents",
     {
