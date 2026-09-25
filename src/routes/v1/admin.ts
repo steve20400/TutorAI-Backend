@@ -693,7 +693,15 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           refusees: number
           acceptees: number
           en_attente: number
-        }> | null)?.[0] ?? { refusees: 0, acceptees: 0, en_attente: 0 },
+          detaches_par_enfant: number
+          detaches_par_adulte: number
+        }> | null)?.[0] ?? {
+          refusees: 0,
+          acceptees: 0,
+          en_attente: 0,
+          detaches_par_enfant: 0,
+          detaches_par_adulte: 0,
+        },
         enfants: enfants.data ?? [],
         contrats: (contrats.data ?? []).map((c) => ({
           ...c,
