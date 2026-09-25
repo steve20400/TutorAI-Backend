@@ -46,6 +46,16 @@ function connexion(): pg.Pool | null {
 }
 
 /**
+ * La même connexion, pour ce qui n'est pas le tuteur.
+ *
+ * Un deuxième bassin doublerait les connexions ouvertes sur une base dont le
+ * palier gratuit en compte peu. Le courrier passe donc par celui-ci.
+ */
+export function bassinDuService(): pg.Pool | null {
+  return connexion()
+}
+
+/**
  * La configuration en vigueur, relue régulièrement.
  *
  * Pas à chaque message : ce serait un aller-retour de base avant chaque

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 
 import { supabasePour } from "../../supabase.js"
+import { previens } from "../../courrier.js"
 
 /**
  * L'inscription d'un enfant venu seul.
@@ -117,6 +118,17 @@ export async function routesRecuperationEnfant(
       )
 
       if (error) requete.log.warn({ error }, "demande de mot de passe refusee")
+
+      // Le courriel part derrière, sans qu'on l'attende.
+      //
+      // L'attendre rendrait la réponse plus lente quand l'enfant existe et
+      // qu'il a des adultes rattachés, et plus rapide sinon. Ce seul écart
+      // suffirait à savoir, nom par nom, qui est inscrit — exactement ce que
+      // le silence de cette route cherche à empêcher.
+      //
+      // La base a déjà tranché qui prévenir : si rien n'a été inscrit,
+      // `destinataires_a_prevenir` ne rend personne et rien ne part.
+      previens(nom, requete.log)
 
       // Toujours la même réponse, erreur comprise.
       return { ok: true }
