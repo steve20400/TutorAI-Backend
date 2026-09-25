@@ -164,11 +164,11 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
         tags: ["liens"],
         summary: "L'enfant coupe un rattachement",
         description:
-          "L'enfant retire un adulte de son compte. Contrairement au " +
-          "détachement d'un adulte, la demande acceptée n'est pas effacée " +
-          "mais passée en refusée : cet adulte ne pourra plus jamais " +
-          "redemander, et son écran n'en dira rien. C'est ce qui rend le " +
-          "« non » d'un enfant définitif sans qu'il ait à le répéter.",
+          "L'enfant retire un adulte de son compte. Le miroir exact du " +
+          "détachement côté adulte : la demande acceptée est effacée, donc " +
+          "le rattachement peut se refaire par la procédure normale. Se " +
+          "détacher n'est pas refuser — un refus, lui, reste définitif et " +
+          "muet.",
         security: securite,
         params: {
           type: "object",
