@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
-import { exigerSession, supabasePour, utilisateurDe } from "../../supabase.js"
+import { exigerSession, supabasePour } from "../../supabase.js"
 
 /**
  * Les enfants d'un parent.

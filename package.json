@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/serveur.js",
     "typecheck": "tsc --noEmit",
-    "verifier": "npm run typecheck && npm run test:ia && npm run test:programme && npm run build",
+    "lint": "eslint .",
+    "verifier": "npm run typecheck && npm run lint && npm run test:ia && npm run test:programme && npm run build",
     "test:ia": "tsx tests/ia.ts",
     "test:programme": "tsx --test tests/programme.test.ts"
   },
@@ -26,10 +27,13 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.18.1",
+    "eslint": "^9.39.5",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.70.1"
   },
   "engines": {
     "node": ">=22.0.0 <25.0.0"
