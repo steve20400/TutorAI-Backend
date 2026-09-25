@@ -157,6 +157,45 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
     },
   )
 
+  app.post(
+    "/liens/adultes/:id/couper",
+    {
+      schema: {
+        tags: ["liens"],
+        summary: "L'enfant coupe un rattachement",
+        description:
+          "L'enfant retire un adulte de son compte. Contrairement au " +
+          "détachement d'un adulte, la demande acceptée n'est pas effacée " +
+          "mais passée en refusée : cet adulte ne pourra plus jamais " +
+          "redemander, et son écran n'en dira rien. C'est ce qui rend le " +
+          "« non » d'un enfant définitif sans qu'il ait à le répéter.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+
+      const { error } = await supabasePour(requete).rpc("couper_rattachement", {
+        adulte: id,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "coupure de rattachement refusee")
+        return reponse.code(403).send({
+          erreur: "coupure_refusee",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
   app.get(
     "/liens/mes-parents",
     {
