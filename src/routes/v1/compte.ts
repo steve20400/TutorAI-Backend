@@ -60,7 +60,22 @@ export async function routesCompte(app: FastifyInstance): Promise<void> {
             prenom: { type: "string", minLength: 1, maxLength: 60 },
             nom: { type: "string", maxLength: 60 },
             telephone: { type: "string", maxLength: 30 },
-            identifiant: { type: "string", minLength: 3, maxLength: 40 },
+            // Vide OU trois caractères au moins, jamais entre les deux.
+            //
+            // Le schéma disait `minLength: 3` tout court, et contredisait le
+            // gestionnaire juste en dessous, qui ignore délibérément un
+            // identifiant vide. L'écran de l'enfant n'affiche pas ce champ —
+            // son identifiant est figé — donc le formulaire l'envoyait vide,
+            // et la requête était refusée avant d'atteindre ce code : choisir
+            // un dessin rendait « identifiant must NOT have fewer than 3
+            // characters », qui ne veut rien dire pour qui vient de changer
+            // son image.
+            identifiant: {
+              anyOf: [
+                { type: "string", maxLength: 0 },
+                { type: "string", minLength: 3, maxLength: 40 },
+              ],
+            },
             photo_url: { type: "string", maxLength: 500 },
           },
         },
