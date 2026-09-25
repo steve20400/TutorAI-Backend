@@ -213,28 +213,13 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
       const moi = utilisateurDe(requete)
       const supabase = supabasePour(requete)
 
-      const { data: liens } = await supabase
-        .from("liens_familiaux")
-        .select("parent_id, porte, fournit, actif_le")
-        .eq("eleve_id", moi)
-
-      const ids = (liens ?? []).map((l) => l.parent_id as string)
-      if (ids.length === 0) {
-        // Un enfant venu seul : pas d'adulte, mais une jauge quand même — il
-        // a sa propre dotation, et elle s'épuise.
-        const { data } = await supabase.rpc("jauge_detaillee", { eleve: moi })
-        const seul = (data as Array<{ actif: boolean; etat: string; part: number }> | null)?.[0]
-        return {
-          actif: seul?.actif ?? false,
-          etat: seul?.etat ?? "illimite",
-          part: seul?.part ?? 100,
-          payeur: null,
-          donnees: [],
-        }
-      }
-
-      const [{ data: profils }, { data: jauge }] = await Promise.all([
-        supabase.from("profils").select("id, prenom, photo_url").in("id", ids),
+      // `mes_adultes()` et non deux requêtes : la politique de lecture de
+      // `profils` n'autorise pas un enfant à lire le profil de son adulte —
+      // seulement l'inverse. La liste revenait donc vide alors que le lien
+      // existait. L'élargir donnerait la ligne entière, téléphone compris ;
+      // la fonction rend le prénom, l'image, et rien d'autre.
+      const [{ data: adultes }, { data: jauge }] = await Promise.all([
+        supabase.rpc("mes_adultes"),
         supabase.rpc("jauge_detaillee", { eleve: moi }),
       ])
 
@@ -245,8 +230,6 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
         payeur: string | null
       }> | null)?.[0]
 
-      const parId = new Map((profils ?? []).map((p) => [p.id as string, p]))
-
       return {
         // `actif` faux tant que le module de jetons est éteint : l'écran
         // n'affiche alors aucune jauge. Un anneau plein qui ne bouge jamais
@@ -255,20 +238,14 @@ export async function routesLiens(app: FastifyInstance): Promise<void> {
         etat: mesure?.etat ?? "illimite",
         part: mesure?.part ?? 100,
         payeur: mesure?.payeur ?? null,
-        donnees: (liens ?? [])
-          .map((l) => {
-            const p = parId.get(l.parent_id as string)
-            if (!p) return null
-            return {
-              id: p.id,
-              prenom: p.prenom,
-              photo_url: p.photo_url,
-              porte: l.porte as boolean,
-              fournit: l.fournit as boolean,
-              provisoire: new Date(l.actif_le as string) > new Date(),
-            }
-          })
-          .filter(Boolean),
+        donnees: (adultes ?? []) as Array<{
+          id: string
+          prenom: string | null
+          photo_url: string | null
+          porte: boolean
+          fournit: boolean
+          provisoire: boolean
+        }>,
       }
     },
   )
