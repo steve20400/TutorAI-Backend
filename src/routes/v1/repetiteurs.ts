@@ -121,4 +121,55 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
       }
     },
   )
+
+  app.get(
+    "/repetiteurs/:id",
+    {
+      schema: {
+        tags: ["répétiteurs"],
+        summary: "Le dossier public d'un répétiteur vérifié",
+        description:
+          "Ce qu'un parent a le droit de lire : l'identité, la façon de " +
+          "travailler, ce qui est enseigné, le tarif — et les pièces qui ont " +
+          "été contrôlées, avec leur date. Jamais l'emplacement d'un " +
+          "document, jamais le verdict d'une pièce refusée : cela appartient " +
+          "à l'administration et à celui qui l'a déposée.",
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const supabase = supabasePour(requete)
+
+      const [{ data: fiches, error }, { data: pieces }] = await Promise.all([
+        supabase.rpc("repetiteur_public", { rid: id }),
+        supabase.rpc("pieces_controlees", { rid: id }),
+      ])
+
+      if (error) {
+        requete.log.error({ error }, "lecture du dossier impossible")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Le dossier est momentanément indisponible.",
+        })
+      }
+
+      const fiche = (fiches as unknown[] | null)?.[0]
+
+      // Introuvable et non vérifié se répondent pareil : dire « ce dossier
+      // existe mais n'est pas publié » apprendrait qui a postulé.
+      if (!fiche) {
+        return reponse.code(404).send({
+          erreur: "dossier_absent",
+          message: "Ce dossier n'existe pas.",
+        })
+      }
+
+      return { fiche, pieces: pieces ?? [] }
+    },
+  )
 }
