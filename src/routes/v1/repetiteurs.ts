@@ -75,8 +75,43 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
         })
       }
 
+      // Les noms viennent à part.
+      //
+      // La politique de lecture de `profils` n'autorise pas un parent à lire
+      // le profil d'un répétiteur — seulement le sien, ceux de ses enfants et
+      // l'administration. L'annuaire rendait donc des fiches complètes et
+      // anonymes. `noms_de_repetiteurs()` rend le prénom et le nom des
+      // vérifiés, et rien d'autre : élargir la politique aurait donné la
+      // ligne entière, téléphone et identifiant compris.
+      const ids = (data ?? []).map((r) => r.id as string)
+      let noms = new Map<string, { prenom: string | null; nom: string | null }>()
+
+      if (ids.length > 0) {
+        const { data: lignes, error: erreurNoms } = await supabasePour(
+          requete,
+        ).rpc("noms_de_repetiteurs", { ids })
+
+        if (erreurNoms) {
+          // Bruyant : une fiche sans nom est inutilisable, et rien à l'écran
+          // ne dirait pourquoi.
+          requete.log.error({ error: erreurNoms }, "noms de l'annuaire illisibles")
+        }
+
+        noms = new Map(
+          ((lignes ?? []) as Array<{
+            id: string
+            prenom: string | null
+            nom: string | null
+          }>).map((l) => [l.id, { prenom: l.prenom, nom: l.nom }]),
+        )
+      }
+
       return {
-        donnees: data ?? [],
+        donnees: (data ?? []).map((r) => ({
+          ...r,
+          prenom: noms.get(r.id as string)?.prenom ?? null,
+          nom: noms.get(r.id as string)?.nom ?? null,
+        })),
         pagination: {
           page,
           parPage,
