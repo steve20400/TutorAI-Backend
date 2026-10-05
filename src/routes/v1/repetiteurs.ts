@@ -4,6 +4,9 @@ import { supabasePour } from "../../supabase.js"
 
 /** Bornes de pagination, identiques dans les trois services de la plateforme. */
 const PAR_PAGE_DEFAUT = 20
+/** Un identifiant qui n'existe jamais, pour une recherche sans résultat. */
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000"
+
 const PAR_PAGE_MAX = 50
 
 /**
@@ -27,6 +30,10 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
           type: "object",
           properties: {
             ville: { type: "string", maxLength: 80 },
+            q: { type: "string", maxLength: 80 },
+            prixMin: { type: "integer", minimum: 0 },
+            prixMax: { type: "integer", minimum: 0 },
+            experienceMin: { type: "integer", minimum: 0, maximum: 60 },
             matiere: { type: "string", maxLength: 60 },
             niveau: { type: "string", maxLength: 40 },
             page: { type: "integer", minimum: 1, default: 1 },
@@ -41,29 +48,70 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
       },
     },
     async (requete, reponse) => {
-      const { ville, matiere, niveau, page = 1, parPage = PAR_PAGE_DEFAUT } =
-        requete.query as {
-          ville?: string
-          matiere?: string
-          niveau?: string
-          page?: number
-          parPage?: number
-        }
+      const {
+        ville,
+        matiere,
+        niveau,
+        q,
+        prixMin,
+        prixMax,
+        experienceMin,
+        page = 1,
+        parPage = PAR_PAGE_DEFAUT,
+      } = requete.query as {
+        ville?: string
+        matiere?: string
+        niveau?: string
+        q?: string
+        prixMin?: number
+        prixMax?: number
+        experienceMin?: number
+        page?: number
+        parPage?: number
+      }
 
       const debut = (page - 1) * parPage
 
       let requeteSql = supabasePour(requete)
         .from("repetiteurs")
         .select(
-          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url",
+          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url, verifie_le",
           { count: "exact" },
         )
         .order("annees_experience", { ascending: false, nullsFirst: false })
         .range(debut, debut + parPage - 1)
 
+      // La recherche passe par une fonction : le nom vit dans `profils`, que
+      // la politique de lecture ferme à un parent. Elle ne rend que des
+      // identifiants, et seulement ceux de répétiteurs vérifiés.
+      if (q?.trim()) {
+        const { data: trouves, error: erreurQ } = await supabasePour(requete).rpc(
+          "chercher_repetiteurs",
+          { q },
+        )
+
+        if (erreurQ) {
+          requete.log.error({ error: erreurQ }, "recherche dans l'annuaire impossible")
+          return reponse.code(502).send({
+            erreur: "base_indisponible",
+            message: "La recherche est momentanément indisponible.",
+          })
+        }
+
+        const ids = ((trouves ?? []) as Array<{ id: string }>).map((r) => r.id)
+        // Aucun résultat : on le dit par une liste vide, pas en ignorant le
+        // filtre — sans quoi chercher « zzz » rendrait tout l'annuaire.
+        requeteSql = requeteSql.in("id", ids.length > 0 ? ids : [EMPTY_UUID])
+      }
+
       if (ville) requeteSql = requeteSql.ilike("ville", ville)
       if (matiere) requeteSql = requeteSql.contains("matieres", [matiere])
       if (niveau) requeteSql = requeteSql.contains("niveaux", [niveau])
+      if (prixMin !== undefined) requeteSql = requeteSql.gte("tarif_mensuel", prixMin)
+      if (prixMax !== undefined) requeteSql = requeteSql.lte("tarif_mensuel", prixMax)
+      if (experienceMin !== undefined) {
+        requeteSql = requeteSql.gte("annees_experience", experienceMin)
+      }
 
       const { data, error, count } = await requeteSql
 
@@ -119,6 +167,58 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
           pages: Math.max(1, Math.ceil((count ?? 0) / parPage)),
         },
       }
+    },
+  )
+
+  app.get(
+    "/repetiteurs/villes",
+    {
+      schema: {
+        tags: ["répétiteurs"],
+        summary: "Combien de répétiteurs vérifiés par ville",
+        description:
+          "La barre de filtres affiche les effectifs. Sans eux, il faudrait " +
+          "charger tout l'annuaire pour les calculer.",
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc(
+        "repetiteurs_par_ville",
+      )
+
+      if (error) {
+        requete.log.error({ error }, "effectifs par ville illisibles")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Les effectifs ne sont pas disponibles.",
+        })
+      }
+
+      return { donnees: data ?? [] }
+    },
+  )
+
+  app.get(
+    "/repetiteurs/bornes",
+    {
+      schema: {
+        tags: ["répétiteurs"],
+        summary: "Le tarif le plus bas et le plus haut de l'annuaire",
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc("bornes_tarifs")
+
+      if (error) {
+        requete.log.error({ error }, "bornes de tarif illisibles")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Les bornes ne sont pas disponibles.",
+        })
+      }
+
+      const l = (data as Array<{ bas: number; haut: number }> | null)?.[0]
+      return { bas: l?.bas ?? 0, haut: l?.haut ?? 0 }
     },
   )
 
