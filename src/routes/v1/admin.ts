@@ -332,6 +332,110 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
    * La règle vit dans `statuer_sur_piece` et non ici : un appel direct à
    * PostgREST avec un jeton d'administrateur contournerait ce service.
    */
+  /**
+   * Ce qu'une purge des dépôts abandonnés emporterait.
+   *
+   * La migration 067 laisse déposer ses pièces AVANT de créer son compte.
+   * Quelqu'un photographie sa carte d'identité, le réseau coupe, il renonce —
+   * et ses documents restent, rattachés à personne. On les compte ici pour
+   * que l'administration sache ce qu'elle efface avant de l'effacer : un
+   * bouton qui ne dit pas ce qu'il emporte n'est pas un bouton, c'est un pari.
+   */
+  app.get(
+    "/depots-abandonnes",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Les pièces déposées par des inscriptions jamais terminées",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc(
+        "depots_abandonnes",
+      )
+
+      if (error) return echec(requete, reponse, error, "depots abandonnes")
+
+      const lignes = (data ?? []) as { jeton: string; chemin: string }[]
+      return {
+        fichiers: lignes.length,
+        depots: new Set(lignes.map((l) => l.jeton)).size,
+      }
+    },
+  )
+
+  /**
+   * Efface les dépôts abandonnés, fichiers compris.
+   *
+   * L'ordre n'est pas indifférent. Les FICHIERS d'abord, par le service de
+   * stockage, qui seul les retire réellement — supprimer la ligne de
+   * `storage.objects` laisserait les octets derrière, invisibles de partout
+   * et pourtant bien là. Les lignes ensuite. Dans l'autre sens, un échec du
+   * stockage nous ferait croire la purge faite.
+   *
+   * Avec le jeton de l'administrateur, et non une clé de service : ce service
+   * n'en détient aucune, délibérément. La politique posée par la migration 070
+   * ouvre une porte étroite — l'administration, sous `depots/`, et seulement
+   * sur un jeton que la base reconnaît comme abandonné.
+   */
+  app.post(
+    "/depots-abandonnes/purge",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Effacer les pièces des inscriptions jamais terminées",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const supabase = supabasePour(requete)
+
+      const { data, error } = await supabase.rpc("depots_abandonnes")
+      if (error) return echec(requete, reponse, error, "depots abandonnes")
+
+      const chemins = ((data ?? []) as { chemin: string }[]).map((l) => l.chemin)
+
+      if (chemins.length > 0) {
+        // Par paquets de cent : le service de stockage borne la taille d'une
+        // suppression groupée, et un refus global ferait échouer une purge
+        // qui aurait très bien pu se faire en plusieurs fois.
+        for (let i = 0; i < chemins.length; i += 100) {
+          const { error: retrait } = await supabase.storage
+            .from("pieces")
+            .remove(chemins.slice(i, i + 100))
+
+          if (retrait) {
+            requete.log.error({ retrait }, "purge : retrait des fichiers refuse")
+            return reponse.code(502).send({
+              erreur: "purge_incomplete",
+              message:
+                "Les fichiers n'ont pas tous pu être effacés. Rien n'a été " +
+                "retiré de la base : réessayez dans un moment.",
+            })
+          }
+        }
+      }
+
+      const { data: combien, error: purge } = await supabase.rpc(
+        "purger_depots_abandonnes",
+      )
+      if (purge) return echec(requete, reponse, purge, "purge des depots")
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        "purge_depots",
+        "depot",
+        // Pas de cible unique : on journalise le nombre, qui est le fait.
+        utilisateurDe(requete),
+        `${String(combien ?? 0)} dépôt(s), ${chemins.length} fichier(s)`,
+      )
+
+      return { depots: combien ?? 0, fichiers: chemins.length }
+    },
+  )
+
   app.post(
     "/pieces/:id/verdict",
     {
