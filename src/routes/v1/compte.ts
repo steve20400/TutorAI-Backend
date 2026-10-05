@@ -51,8 +51,11 @@ export async function routesCompte(app: FastifyInstance): Promise<void> {
         tags: ["compte"],
         summary: "Modifier mon profil",
         description:
-          "L'identifiant n'est modifiable que par l'administration : un " +
-          "déclencheur le garantit, et il sert de nom de connexion.",
+          "L'identifiant sert de nom de connexion. Chacun choisit le sien à " +
+          "l'inscription et peut en changer ; il reste unique pour tout le " +
+          "monde à la fois, et l'ancien est conservé — un nom libéré peut " +
+          "être repris par quelqu'un d'autre, et ce qu'on croyait savoir du " +
+          "premier ne doit pas suivre le second.",
         security: securite,
         body: {
           type: "object",

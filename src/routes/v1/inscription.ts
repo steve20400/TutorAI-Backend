@@ -34,15 +34,20 @@ export async function routesInscription(app: FastifyInstance): Promise<void> {
             prenom: { type: "string", minLength: 2, maxLength: 60 },
             nom: { type: "string", maxLength: 60 },
             motDePasse: { type: "string", minLength: 6, maxLength: 200 },
+            // Le nom de connexion qu'il a choisi. Facultatif : sans lui, la
+            // fonction en fabrique un depuis le prénom, comme avant. C'est le
+            // seul avec lequel il se connectera — il n'a pas d'adresse.
+            identifiant: { type: "string", minLength: 3, maxLength: 40 },
           },
         },
       },
     },
     async (requete, reponse) => {
-      const { prenom, nom, motDePasse } = requete.body as {
+      const { prenom, nom, motDePasse, identifiant } = requete.body as {
         prenom: string
         nom?: string
         motDePasse: string
+        identifiant?: string
       }
 
       const { data, error } = await supabasePour(requete).rpc(
@@ -51,6 +56,7 @@ export async function routesInscription(app: FastifyInstance): Promise<void> {
           prenom_eleve: prenom,
           nom_eleve: nom ?? null,
           mot_de_passe: motDePasse,
+          identifiant_choisi: identifiant ?? null,
         },
       )
 
