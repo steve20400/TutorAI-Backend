@@ -343,7 +343,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const { id } = requete.params as { id: string }
       const supabase = supabasePour(requete)
 
-      const [fiche, profil, pieces, types] = await Promise.all([
+      const [fiche, profil, pieces, types, courriel] = await Promise.all([
         supabase
           .from("repetiteurs")
           .select(
@@ -366,6 +366,16 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
           .from("types_pieces")
           .select("cle, libelle_fr, libelle_en, requise, ordre")
           .order("ordre"),
+        // L'adresse vient d'`auth.users`, que PostgREST n'expose pas : seule
+        // une fonction `security definer` peut la lire, et elle vérifie
+        // elle-même que l'appelant est de l'administration.
+        //
+        // L'écran ne montrait que le téléphone. Or c'est par cette adresse
+        // que le répétiteur s'est inscrit, c'est elle qui reçoit le verdict,
+        // et c'est elle qu'il faut avoir sous les yeux pour écrire à
+        // quelqu'un dont on s'apprête à refuser le dossier — un refus sans
+        // moyen d'en parler est une porte fermée sans sonnette.
+        supabase.rpc("courriel_du_compte", { cible: id }),
       ])
 
       if (!fiche.data) {
@@ -380,6 +390,7 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         profil: profil.data,
         pieces: pieces.data ?? [],
         types: types.data ?? [],
+        courriel: (courriel.data as string | null) ?? null,
       }
     },
   )
