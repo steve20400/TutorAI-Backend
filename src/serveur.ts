@@ -12,6 +12,7 @@ import { routesMoi } from "./routes/v1/moi.js"
 import { routesAdmin } from "./routes/v1/admin.js"
 import { routesCompte } from "./routes/v1/compte.js"
 import { routesContrats } from "./routes/v1/contrats.js"
+import { routesMessagerie } from "./routes/v1/messagerie.js"
 import { routesConversation } from "./routes/v1/conversation.js"
 import { routesMessage } from "./routes/v1/message.js"
 import {
@@ -82,6 +83,7 @@ export async function construireServeur() {
       await v1.register(routesEnfants)
       await v1.register(routesLiens)
       await v1.register(routesContrats)
+      await v1.register(routesMessagerie)
       await v1.register(routesSeances)
       await v1.register(routesSignalements)
       await v1.register(routesInscription)
