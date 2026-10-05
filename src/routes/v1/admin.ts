@@ -11,6 +11,46 @@ import {
   supabasePour,
   utilisateurDe,
 } from "../../supabase.js"
+import { previensDuVerdict } from "../../courrier.js"
+
+/**
+ * Prévenir un répétiteur de ce qu'est devenu son dossier.
+ *
+ * L'adresse vit dans `auth.users`, que PostgREST n'expose pas : seule
+ * `courriel_du_compte` l'ouvre, et seulement à l'administration — c'est donc
+ * ici, avec le jeton de l'administrateur qui vient de décider, qu'elle se lit.
+ * Le service d'envoi, lui, n'a pas ce droit et ne l'aura pas.
+ *
+ * Rien n'est attendu et rien n'échoue : la décision est déjà écrite et
+ * inscrite au registre. Une panne de l'envoi ne doit pas la défaire, ni
+ * rendre une erreur à l'administrateur pour une action qui a bien eu lieu.
+ */
+async function previenir(
+  requete: Parameters<typeof supabasePour>[0],
+  cible: string,
+  accepte: boolean,
+  motif: string | null,
+): Promise<void> {
+  try {
+    const supabase = supabasePour(requete)
+    const [adresse, profil] = await Promise.all([
+      supabase.rpc("courriel_du_compte", { cible }),
+      supabase.from("profils").select("prenom").eq("id", cible).maybeSingle(),
+    ])
+
+    previensDuVerdict(
+      {
+        adresse: (adresse.data as string | null) ?? null,
+        prenom: (profil.data?.prenom as string | null) ?? null,
+        accepte,
+        motif,
+      },
+      requete.log,
+    )
+  } catch (erreur) {
+    requete.log.error({ erreur }, "verdict : destinataire introuvable")
+  }
+}
 
 /**
  * Espace d'administration.
@@ -265,6 +305,16 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         "repetiteur",
         id,
       )
+
+      // Il attendait, et rien ne lui disait quand l'attente s'arrêtait : il
+      // l'apprenait en revenant essayer de se connecter, ou ne l'apprenait
+      // pas. L'adresse est lue ici, en contexte d'administration — la
+      // fonction qui ouvre `auth.users` ne répond qu'à elle.
+      //
+      // L'envoi part derrière : la décision est prise et inscrite au registre,
+      // et une panne de Brevo ne doit pas la défaire.
+      await previenir(requete, id, true, null)
+
       return { ok: true }
     },
   )
@@ -321,6 +371,13 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
         id,
         motif,
       )
+
+      // Le motif part avec le message. Un refus sans motif ne se conteste pas
+      // et ne se corrige pas : c'est une porte close sans indication de
+      // laquelle pousser. Il est déjà obligatoire ici ; il manquait seulement
+      // le chemin pour qu'il arrive jusqu'à l'intéressé.
+      await previenir(requete, id, false, motif)
+
       return { ok: true }
     },
   )
