@@ -319,6 +319,80 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /**
+   * Statuer sur une pièce justificative.
+   *
+   * Il manquait la moitié du geste : on pouvait apposer un cachet sur une
+   * fiche, mais pas dire ce qu'on pensait d'une pièce. Elles restaient
+   * « déposée » à vie — et `pieces_controlees` ne montre que ce qui est
+   * « lisible », donc le dossier public d'un répétiteur vérifié affichait
+   * « aucune pièce n'est encore affichable ». L'affirmation sans la preuve,
+   * ce qui est exactement ce qu'un parent ne vient pas chercher ici.
+   *
+   * La règle vit dans `statuer_sur_piece` et non ici : un appel direct à
+   * PostgREST avec un jeton d'administrateur contournerait ce service.
+   */
+  app.post(
+    "/pieces/:id/verdict",
+    {
+      schema: {
+        tags: ["administration"],
+        summary: "Dire ce qu'on pense d'une pièce",
+        description:
+          "Trois verdicts, qui ne disent pas la même chose à celui qui a " +
+          "déposé. « Illisible » veut dire « recommencez la photo » et n'est " +
+          "pas un reproche ; « refusée » veut dire « ce document ne convient " +
+          "pas » et demande un motif, sans quoi il n'y a rien à corriger.",
+        security: securite,
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["verdict"],
+          properties: {
+            verdict: { type: "string", enum: ["lisible", "illisible", "refusee"] },
+            motif: { type: "string", maxLength: 1000 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const { verdict, motif } = requete.body as {
+        verdict: string
+        motif?: string
+      }
+
+      const { error } = await supabasePour(requete).rpc("statuer_sur_piece", {
+        piece: id,
+        verdict,
+        raison: motif ?? null,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "verdict de piece refuse")
+        return reponse.code(403).send({
+          erreur: "verdict_refuse",
+          message: error.message,
+        })
+      }
+
+      await journaliser(
+        supabasePour(requete),
+        utilisateurDe(requete),
+        "piece_" + verdict,
+        "piece",
+        id,
+        motif ?? null,
+      )
+
+      return { ok: true }
+    },
+  )
+
   app.post(
     "/dossiers/:id/refus",
     {
