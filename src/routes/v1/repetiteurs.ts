@@ -34,6 +34,7 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
             prixMin: { type: "integer", minimum: 0 },
             prixMax: { type: "integer", minimum: 0 },
             experienceMin: { type: "integer", minimum: 0, maximum: 60 },
+            tri: { type: "string", enum: ["experience", "tarif"] },
             matiere: { type: "string", maxLength: 60 },
             niveau: { type: "string", maxLength: 40 },
             page: { type: "integer", minimum: 1, default: 1 },
@@ -56,6 +57,7 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
         prixMin,
         prixMax,
         experienceMin,
+        tri,
         page = 1,
         parPage = PAR_PAGE_DEFAUT,
       } = requete.query as {
@@ -66,6 +68,7 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
         prixMin?: number
         prixMax?: number
         experienceMin?: number
+        tri?: "experience" | "tarif"
         page?: number
         parPage?: number
       }
@@ -78,7 +81,14 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
           "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url, verifie_le",
           { count: "exact" },
         )
-        .order("annees_experience", { ascending: false, nullsFirst: false })
+        // Par défaut les plus expérimentés, comme au canevas. Le tarif le
+        // plus bas est l'autre tri que demande un parent, et le seul autre
+        // qu'on puisse trier honnêtement : « le mieux noté » n'existe pas,
+        // il n'y a pas de notes.
+        .order(tri === "tarif" ? "tarif_mensuel" : "annees_experience", {
+          ascending: tri === "tarif",
+          nullsFirst: false,
+        })
         .range(debut, debut + parPage - 1)
 
       // La recherche passe par une fonction : le nom vit dans `profils`, que
