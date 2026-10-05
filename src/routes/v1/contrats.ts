@@ -37,7 +37,7 @@ export async function routesContrats(app: FastifyInstance): Promise<void> {
       let q = supabasePour(requete)
         .from("contrats")
         .select(
-          "id, parent_id, eleve_id, repetiteur_id, matiere, tarif, frequence, demarre_le, termine_le, regle",
+          "id, parent_id, eleve_id, repetiteur_id, matiere, tarif, frequence, demarre_le, termine_le, regle, statut, repondu_le",
         )
         .order("demarre_le", { ascending: false, nullsFirst: false })
 
@@ -120,4 +120,83 @@ export async function routesContrats(app: FastifyInstance): Promise<void> {
       return reponse.code(201).send(data)
     },
   )
+
+  app.post(
+    "/contrats/:id/reponse",
+    {
+      preHandler: exigerSession,
+      schema: {
+        tags: ["contrats"],
+        summary: "Accepter ou refuser une proposition",
+        description:
+          "Réservé au répétiteur concerné. Le parent crée la proposition, il " +
+          "ne s'accepte pas lui-même : un déclencheur le garantit. Un refus " +
+          "est dit au parent, contrairement au refus d'un enfant — un " +
+          "répétiteur qui refuse n'a pas la disponibilité, et le parent doit " +
+          "l'apprendre pour chercher ailleurs plutôt que d'attendre.",
+        security: [{ porteur: [] }],
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        body: {
+          type: "object",
+          required: ["oui"],
+          properties: { oui: { type: "boolean" } },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { id } = requete.params as { id: string }
+      const { oui } = requete.body as { oui: boolean }
+
+      const { error } = await supabasePour(requete).rpc("repondre_contrat", {
+        contrat: id,
+        oui,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "reponse au contrat refusee")
+        return reponse.code(403).send({
+          erreur: "reponse_refusee",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
+
+  app.get(
+    "/contrats/propositions",
+    {
+      preHandler: exigerSession,
+      schema: {
+        tags: ["contrats"],
+        summary: "Les propositions qui m'attendent",
+        description:
+          "Réservé au répétiteur. Le prénom de l'élève, et pas son nom : un " +
+          "répétiteur qui refuse dix propositions repartirait sinon avec dix " +
+          "identités complètes d'enfants. Le prénom et la matière suffisent à " +
+          "décider si l'on a la disponibilité.",
+        security: [{ porteur: [] }],
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc("mes_propositions")
+
+      if (error) {
+        requete.log.error({ error }, "lecture des propositions impossible")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Les propositions n'ont pas pu être lues.",
+        })
+      }
+
+      return { donnees: data ?? [] }
+    },
+  )
+
 }
