@@ -169,4 +169,83 @@ export async function routesRepetiteur(app: FastifyInstance): Promise<void> {
       return { ok: true, enAttente: aEcrire.statut === "en_attente" }
     },
   )
+
+  app.get(
+    "/pieces",
+    {
+      preHandler: exigerSession,
+      schema: {
+        tags: ["répétiteurs"],
+        summary: "Mes pièces justificatives, et ce qu'elles sont devenues",
+        description:
+          "Tous les types attendus, déposés ou non, avec leur statut et le " +
+          "motif d'un refus. Jamais le chemin du fichier : une pièce déposée " +
+          "par erreur ne doit pas rester consultable, même par celui qui l'a " +
+          "envoyée.",
+        security: securite,
+      },
+    },
+    async (requete, reponse) => {
+      const { data, error } = await supabasePour(requete).rpc("mes_pieces")
+
+      if (error) {
+        requete.log.error({ error }, "lecture de mes pieces impossible")
+        return reponse.code(502).send({
+          erreur: "base_indisponible",
+          message: "Vos pièces n'ont pas pu être lues.",
+        })
+      }
+
+      return { donnees: data ?? [] }
+    },
+  )
+
+  app.post(
+    "/pieces",
+    {
+      preHandler: exigerSession,
+      schema: {
+        tags: ["répétiteurs"],
+        summary: "Déclarer une pièce déposée",
+        description:
+          "Le fichier est envoyé directement au seau privé par le " +
+          "navigateur, sous un dossier au nom du répétiteur — la politique de " +
+          "stockage l'y enferme. Cette route ne fait qu'inscrire le dépôt. " +
+          "Elle refuse si le dossier est déjà validé : être contrôlé avec un " +
+          "document puis en substituer un autre reviendrait à rester affiché " +
+          "comme vérifié sur une pièce que personne n'a vue.",
+        security: securite,
+        body: {
+          type: "object",
+          required: ["type_cle", "chemin"],
+          properties: {
+            type_cle: { type: "string", minLength: 1, maxLength: 40 },
+            chemin: { type: "string", minLength: 1, maxLength: 400 },
+          },
+        },
+      },
+    },
+    async (requete, reponse) => {
+      const { type_cle, chemin } = requete.body as {
+        type_cle: string
+        chemin: string
+      }
+
+      const { error } = await supabasePour(requete).rpc("deposer_piece", {
+        type_piece: type_cle,
+        chemin_fichier: chemin,
+      })
+
+      if (error) {
+        requete.log.warn({ error }, "depot de piece refuse")
+        return reponse.code(403).send({
+          erreur: "depot_refuse",
+          message: error.message,
+        })
+      }
+
+      return { ok: true }
+    },
+  )
+
 }
