@@ -55,7 +55,7 @@ export async function routesRepetiteur(app: FastifyInstance): Promise<void> {
         supabase
           .from("repetiteurs")
           .select(
-            "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url, statut, motif_refus, verifie_le",
+            "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, langues_cours, moments, photo_url, statut, motif_refus, verifie_le",
           )
           .eq("id", moi)
           .maybeSingle(),
@@ -98,6 +98,28 @@ export async function routesRepetiteur(app: FastifyInstance): Promise<void> {
             tarif_mensuel: { type: "integer", minimum: 0, maximum: 10_000_000 },
             annees_experience: { type: "integer", minimum: 0, maximum: 70 },
             disponibilites_texte: { type: "string", maxLength: 500 },
+            // Listes fermées, comme en base (migration 071). Le filtre de
+            // l'annuaire ne sait chercher que ces valeurs-là ; en accepter
+            // d'autres rendrait des fiches introuvables par leur propre
+            // auteur.
+            langues_cours: {
+              type: "array",
+              maxItems: 2,
+              items: { type: "string", enum: ["fr", "en"] },
+            },
+            moments: {
+              type: "array",
+              maxItems: 4,
+              items: {
+                type: "string",
+                enum: [
+                  "semaine_apres_ecole",
+                  "semaine_soir",
+                  "samedi",
+                  "dimanche",
+                ],
+              },
+            },
           },
         },
       },
@@ -123,6 +145,14 @@ export async function routesRepetiteur(app: FastifyInstance): Promise<void> {
         tarif_mensuel: corps.tarif_mensuel ?? null,
         annees_experience: corps.annees_experience ?? null,
         disponibilites_texte: corps.disponibilites_texte ?? null,
+        // Dédoublonnées : deux cases cochées deux fois par un formulaire
+        // rejoué passeraient la contrainte de la base sans rien signifier.
+        langues_cours: Array.isArray(corps.langues_cours)
+          ? [...new Set(corps.langues_cours as string[])]
+          : [],
+        moments: Array.isArray(corps.moments)
+          ? [...new Set(corps.moments as string[])]
+          : [],
         maj_le: new Date().toISOString(),
       }
       if (matieres) aEcrire.matieres = matieres

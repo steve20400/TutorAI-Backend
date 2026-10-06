@@ -37,6 +37,19 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
             tri: { type: "string", enum: ["experience", "tarif"] },
             matiere: { type: "string", maxLength: 60 },
             niveau: { type: "string", maxLength: 40 },
+            // Listes fermées, comme en base : une valeur libre rendrait le
+            // filtre inutilisable au premier « Anglais/English » saisi à la
+            // main, et ne rendrait jamais personne.
+            langueCours: { type: "string", enum: ["fr", "en"] },
+            moment: {
+              type: "string",
+              enum: [
+                "semaine_apres_ecole",
+                "semaine_soir",
+                "samedi",
+                "dimanche",
+              ],
+            },
             page: { type: "integer", minimum: 1, default: 1 },
             parPage: {
               type: "integer",
@@ -57,6 +70,8 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
         prixMin,
         prixMax,
         experienceMin,
+        langueCours,
+        moment,
         tri,
         page = 1,
         parPage = PAR_PAGE_DEFAUT,
@@ -68,6 +83,8 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
         prixMin?: number
         prixMax?: number
         experienceMin?: number
+        langueCours?: string
+        moment?: string
         tri?: "experience" | "tarif"
         page?: number
         parPage?: number
@@ -78,7 +95,7 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
       let requeteSql = supabasePour(requete)
         .from("repetiteurs")
         .select(
-          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url, verifie_le",
+          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, langues_cours, moments, photo_url, verifie_le",
           { count: "exact" },
         )
         // Par défaut les plus expérimentés, comme au canevas. Le tarif le
@@ -117,6 +134,15 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
       if (ville) requeteSql = requeteSql.ilike("ville", ville)
       if (matiere) requeteSql = requeteSql.contains("matieres", [matiere])
       if (niveau) requeteSql = requeteSql.contains("niveaux", [niveau])
+      // `contains` et non `overlaps` : on demande « enseigne en anglais »,
+      // pas « enseigne dans l'une de ces langues ». Un seul critère à la
+      // fois, donc les deux reviennent au même — mais le jour où le filtre
+      // acceptera deux langues, c'est « les deux » qu'il faudra, pas « l'une
+      // ou l'autre ».
+      if (langueCours) {
+        requeteSql = requeteSql.contains("langues_cours", [langueCours])
+      }
+      if (moment) requeteSql = requeteSql.contains("moments", [moment])
       if (prixMin !== undefined) requeteSql = requeteSql.gte("tarif_mensuel", prixMin)
       if (prixMax !== undefined) requeteSql = requeteSql.lte("tarif_mensuel", prixMax)
       if (experienceMin !== undefined) {
