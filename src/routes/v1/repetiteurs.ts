@@ -94,8 +94,21 @@ export async function routesRepetiteurs(app: FastifyInstance): Promise<void> {
 
       let requeteSql = supabasePour(requete)
         .from("repetiteurs")
+        // On demande ce que la fiche AFFICHE, et rien de plus.
+        //
+        // `langues_cours` et `moments` y figuraient sans qu'aucune fiche ne
+        // les montre, et ils ont vidé l'annuaire en entier : PostgREST refuse
+        // la requête complète quand une seule colonne du select manque — pas
+        // la colonne, la requête. Tant que la migration 071 n'était pas
+        // passée, l'écran affichait « réessayez dans un moment » alors que les
+        // quatre répétiteurs étaient bien là.
+        //
+        // Les filtres n'en souffrent pas : `.contains()` travaille en SQL, du
+        // côté du serveur, et n'a pas besoin que la colonne soit dans la
+        // liste rendue. Deux colonnes de tableaux sur vingt fiches, c'était
+        // aussi du poids rendu pour rien sur une connexion mobile.
         .select(
-          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, langues_cours, moments, photo_url, verifie_le",
+          "id, bio, ville, matieres, niveaux, tarif_mensuel, annees_experience, disponibilites_texte, photo_url, verifie_le",
           { count: "exact" },
         )
         // Par défaut les plus expérimentés, comme au canevas. Le tarif le
