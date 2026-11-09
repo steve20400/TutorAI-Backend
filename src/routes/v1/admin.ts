@@ -852,7 +852,11 @@ export async function routesAdmin(app: FastifyInstance): Promise<void> {
       const { data: parent } = await supabase
         .from("profils")
         .select(
-          "id, prenom, nom, identifiant, telephone, pays, photo_url, cree_le, desactive_le, motif_desactivation",
+          // `enregistrement_permis` : la porte du futur abonnement. Sans elle
+          // dans ce select, l'écran affiche « ouvert » quel que soit l'état
+          // réel — et l'administration croit avoir fermé un compte qui ne
+          // l'est pas.
+          "id, prenom, nom, identifiant, telephone, pays, photo_url, cree_le, desactive_le, motif_desactivation, enregistrement_permis",
         )
         .eq("id", id)
         .eq("role", "parent")
